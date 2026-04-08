@@ -3,7 +3,6 @@
 import { useEffect, useState, useCallback, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { motion } from "framer-motion";
 import { Search, MapPin, Clock, Star, Filter, Mountain } from "lucide-react";
 import { api } from "@/lib/api";
 
@@ -91,7 +90,7 @@ function ExperiencesContent() {
         ) : experiences.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
             {experiences.map((exp, i) => (
-              <motion.div key={exp.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
+              <div key={exp.id}>
                 <Link href={`/experiences/${exp.slug}`} className="card group block">
                   <div className="relative h-56 bg-gradient-to-br from-cedar-100 to-sunset-100 overflow-hidden">
                     {exp.coverImage || exp.images?.[0]?.url ? (
@@ -119,7 +118,7 @@ function ExperiencesContent() {
                     </div>
                   </div>
                 </Link>
-              </motion.div>
+              </div>
             ))}
           </div>
         ) : (

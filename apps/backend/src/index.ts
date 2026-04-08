@@ -15,6 +15,7 @@ import bookingRoutes from "./routes/bookings";
 import businessRoutes from "./routes/businesses";
 import adminRoutes from "./routes/admin";
 import reviewRoutes from "./routes/reviews";
+import uploadRoutes from "./routes/uploads";
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -23,7 +24,9 @@ const PORT = process.env.PORT || 10000;
 app.use(helmet());
 app.use(
   cors({
-    origin: process.env.ALLOWED_ORIGINS?.split(",") || ["http://localhost:3000"],
+    origin: process.env.ALLOWED_ORIGINS
+      ? process.env.ALLOWED_ORIGINS.split(",")
+      : true,
     credentials: true,
   })
 );
@@ -48,6 +51,7 @@ app.use("/api/bookings", bookingRoutes);
 app.use("/api/businesses", businessRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/reviews", reviewRoutes);
+app.use("/api/uploads", uploadRoutes);
 
 // 404
 app.use((_req, res) => {

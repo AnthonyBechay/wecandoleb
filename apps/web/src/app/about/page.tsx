@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { motion } from "framer-motion";
 import { Mountain, Wine, Palette, Heart, MapPin, Star } from "lucide-react";
 
 export default function AboutPage() {
@@ -15,12 +14,12 @@ export default function AboutPage() {
         />
         <div className="absolute inset-0 bg-gray-900/60" />
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center text-white">
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+          <div>
             <h1 className="font-display text-4xl md:text-6xl font-bold mb-4">About Lebanon</h1>
             <p className="text-lg text-white/80 max-w-2xl mx-auto">
               A land of ancient cedars, Mediterranean shores, and a culture that celebrates hospitality, food, and art.
             </p>
-          </motion.div>
+          </div>
         </div>
       </section>
 
@@ -42,12 +41,12 @@ export default function AboutPage() {
               { icon: <MapPin className="w-7 h-7" />, title: "Local Treasures", desc: "Every experience is hosted by passionate locals who take pride in sharing their craft and heritage." },
               { icon: <Star className="w-7 h-7" />, title: "Curated Quality", desc: "Each experience is hand-picked and vetted to ensure an unforgettable adventure for every visitor." },
             ].map((item, i) => (
-              <motion.div key={item.title} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.1 }}
+              <div key={item.title}
                 className="text-center">
                 <div className="w-14 h-14 rounded-xl bg-cedar-50 text-cedar-700 flex items-center justify-center mx-auto mb-4">{item.icon}</div>
                 <h3 className="text-lg font-bold text-gray-900 mb-2">{item.title}</h3>
                 <p className="text-gray-600 text-sm">{item.desc}</p>
-              </motion.div>
+              </div>
             ))}
           </div>
         </div>
@@ -64,12 +63,12 @@ export default function AboutPage() {
               { icon: <Palette className="w-8 h-8" />, title: "Artisan Heritage", desc: "Soap-making, pottery, and crafts passed through generations." },
               { icon: <Heart className="w-8 h-8" />, title: "World-Class Hospitality", desc: "Lebanese generosity and warmth are legendary." },
             ].map((item, i) => (
-              <motion.div key={item.title} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.1 }}
+              <div key={item.title}
                 className="bg-white rounded-2xl p-6 border border-gray-100 text-center">
                 <div className="text-cedar-600 mb-3 flex justify-center">{item.icon}</div>
                 <h3 className="font-bold text-gray-900 mb-2">{item.title}</h3>
                 <p className="text-sm text-gray-600">{item.desc}</p>
-              </motion.div>
+              </div>
             ))}
           </div>
         </div>

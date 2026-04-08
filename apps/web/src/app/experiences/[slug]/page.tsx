@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { motion } from "framer-motion";
 import { MapPin, Clock, Users, Star, Check, ArrowLeft, Gift, Calendar, Mountain, Send } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";

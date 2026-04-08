@@ -1,4 +1,5 @@
 import { Router, Request, Response } from "express";
+import bcrypt from "bcryptjs";
 import { prisma } from "../lib/prisma";
 import { authenticate, authorize, AuthRequest } from "../middleware/auth";
 
@@ -106,6 +107,130 @@ router.put("/users/:id/status", authenticate, authorize("SUPER_ADMIN"), async (r
   }
 });
 
+// Get full user details
+router.get("/users/:id", authenticate, authorize("SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.params.id as string },
+      select: {
+        id: true, email: true, firstName: true, lastName: true, phone: true,
+        role: true, isActive: true, creditBalance: true, avatarUrl: true,
+        authProvider: true, createdAt: true, updatedAt: true,
+        businesses: {
+          select: { id: true, name: true, city: true, isVerified: true, createdAt: true },
+        },
+        _count: { select: { bookings: true, reviews: true } },
+      },
+    });
+
+    if (!user) {
+      res.status(404).json({ error: "User not found" });
+      return;
+    }
+
+    res.json(user);
+  } catch {
+    res.status(500).json({ error: "Failed to fetch user" });
+  }
+});
+
+// Create a new user
+router.post("/users", authenticate, authorize("SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { email, password, firstName, lastName, role, creditBalance } = req.body;
+
+    if (!email || !password || !firstName || !lastName) {
+      res.status(400).json({ error: "email, password, firstName, and lastName are required" });
+      return;
+    }
+
+    if (role && !["USER", "BUSINESS_OWNER", "ADMIN", "SUPER_ADMIN"].includes(role)) {
+      res.status(400).json({ error: "Invalid role" });
+      return;
+    }
+
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing) {
+      res.status(409).json({ error: "Email already in use" });
+      return;
+    }
+
+    const passwordHash = await bcrypt.hash(password, 12);
+    const user = await prisma.user.create({
+      data: {
+        email,
+        passwordHash,
+        firstName,
+        lastName,
+        role: role || "USER",
+        creditBalance: creditBalance || 0,
+      },
+      select: {
+        id: true, email: true, firstName: true, lastName: true, role: true,
+        isActive: true, creditBalance: true, createdAt: true,
+      },
+    });
+
+    res.status(201).json(user);
+  } catch {
+    res.status(500).json({ error: "Failed to create user" });
+  }
+});
+
+// Edit any user field
+router.put("/users/:id", authenticate, authorize("SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { firstName, lastName, email, phone, role, isActive, creditBalance } = req.body;
+
+    if (role && !["USER", "BUSINESS_OWNER", "ADMIN", "SUPER_ADMIN"].includes(role)) {
+      res.status(400).json({ error: "Invalid role" });
+      return;
+    }
+
+    const data: any = {};
+    if (firstName !== undefined) data.firstName = firstName;
+    if (lastName !== undefined) data.lastName = lastName;
+    if (email !== undefined) data.email = email;
+    if (phone !== undefined) data.phone = phone;
+    if (role !== undefined) data.role = role;
+    if (isActive !== undefined) data.isActive = isActive;
+    if (creditBalance !== undefined) data.creditBalance = creditBalance;
+
+    const user = await prisma.user.update({
+      where: { id: req.params.id as string },
+      data,
+      select: {
+        id: true, email: true, firstName: true, lastName: true, phone: true,
+        role: true, isActive: true, creditBalance: true, updatedAt: true,
+      },
+    });
+
+    res.json(user);
+  } catch {
+    res.status(500).json({ error: "Failed to update user" });
+  }
+});
+
+// Soft delete or hard delete a user
+router.delete("/users/:id", authenticate, authorize("SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
+  try {
+    const hard = req.query.hard === "true";
+
+    if (hard) {
+      await prisma.user.delete({ where: { id: req.params.id as string } });
+      res.json({ message: "User permanently deleted" });
+    } else {
+      await prisma.user.update({
+        where: { id: req.params.id as string },
+        data: { isActive: false },
+      });
+      res.json({ message: "User deactivated" });
+    }
+  } catch {
+    res.status(500).json({ error: "Failed to delete user" });
+  }
+});
+
 // ─── BUSINESSES ──────────────────────────────────────────
 
 router.get("/businesses", authenticate, authorize("ADMIN", "SUPER_ADMIN"), async (_req: AuthRequest, res: Response) => {
@@ -132,6 +257,105 @@ router.put("/businesses/:id/verify", authenticate, authorize("ADMIN", "SUPER_ADM
     res.json(business);
   } catch {
     res.status(500).json({ error: "Failed to verify business" });
+  }
+});
+
+// Get full business details
+router.get("/businesses/:id", authenticate, authorize("ADMIN", "SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
+  try {
+    const business = await prisma.business.findUnique({
+      where: { id: req.params.id as string },
+      include: {
+        owner: {
+          select: { id: true, email: true, firstName: true, lastName: true, role: true, isActive: true },
+        },
+        experiences: {
+          orderBy: { createdAt: "desc" },
+          include: {
+            category: { select: { id: true, name: true } },
+          },
+        },
+      },
+    });
+
+    if (!business) {
+      res.status(404).json({ error: "Business not found" });
+      return;
+    }
+
+    res.json(business);
+  } catch {
+    res.status(500).json({ error: "Failed to fetch business" });
+  }
+});
+
+// Create a business linked to an owner
+router.post("/businesses", authenticate, authorize("ADMIN", "SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { name, description, phone, email, website, address, city, region, ownerId } = req.body;
+
+    if (!name || !ownerId) {
+      res.status(400).json({ error: "name and ownerId are required" });
+      return;
+    }
+
+    const owner = await prisma.user.findUnique({ where: { id: ownerId } });
+    if (!owner) {
+      res.status(404).json({ error: "Owner user not found" });
+      return;
+    }
+
+    const business = await prisma.business.create({
+      data: { name, description, phone, email, website, address, city, region, ownerId },
+      include: {
+        owner: { select: { id: true, email: true, firstName: true, lastName: true } },
+      },
+    });
+
+    res.status(201).json(business);
+  } catch {
+    res.status(500).json({ error: "Failed to create business" });
+  }
+});
+
+// Edit any business field
+router.put("/businesses/:id", authenticate, authorize("ADMIN", "SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { name, description, phone, email, website, address, city, region, ownerId, isVerified } = req.body;
+
+    const data: any = {};
+    if (name !== undefined) data.name = name;
+    if (description !== undefined) data.description = description;
+    if (phone !== undefined) data.phone = phone;
+    if (email !== undefined) data.email = email;
+    if (website !== undefined) data.website = website;
+    if (address !== undefined) data.address = address;
+    if (city !== undefined) data.city = city;
+    if (region !== undefined) data.region = region;
+    if (ownerId !== undefined) data.ownerId = ownerId;
+    if (isVerified !== undefined) data.isVerified = isVerified;
+
+    const business = await prisma.business.update({
+      where: { id: req.params.id as string },
+      data,
+      include: {
+        owner: { select: { id: true, email: true, firstName: true, lastName: true } },
+      },
+    });
+
+    res.json(business);
+  } catch {
+    res.status(500).json({ error: "Failed to update business" });
+  }
+});
+
+// Delete a business (SUPER_ADMIN only)
+router.delete("/businesses/:id", authenticate, authorize("SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
+  try {
+    await prisma.business.delete({ where: { id: req.params.id as string } });
+    res.json({ message: "Business deleted" });
+  } catch {
+    res.status(500).json({ error: "Failed to delete business" });
   }
 });
 

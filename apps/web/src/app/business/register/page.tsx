@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { motion } from "framer-motion";
 import {
   Building2,
   Send,
@@ -69,9 +68,7 @@ export default function BusinessRegisterPage() {
   if (submitted) {
     return (
       <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center px-4 py-20">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
+        <div
           className="text-center max-w-lg"
         >
           <div className="w-20 h-20 rounded-full bg-green-50 text-green-600 flex items-center justify-center mx-auto mb-6">
@@ -94,7 +91,7 @@ export default function BusinessRegisterPage() {
           >
             Back to Home
           </a>
-        </motion.div>
+        </div>
       </div>
     );
   }
@@ -110,10 +107,7 @@ export default function BusinessRegisterPage() {
       <section className="relative py-20 md:py-28 flex items-center bg-cedar-700">
         <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1556761175-5973dc0f32e7?w=1920&q=80')] bg-cover bg-center opacity-15" />
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center text-white w-full">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-          >
+          <div>
             <div className="w-16 h-16 rounded-2xl bg-white/10 backdrop-blur flex items-center justify-center mx-auto mb-6">
               <Building2 className="w-8 h-8" />
             </div>
@@ -125,18 +119,14 @@ export default function BusinessRegisterPage() {
               for authentic Lebanese experiences. Share your story, reach new
               customers, and grow your business.
             </p>
-          </motion.div>
+          </div>
         </div>
       </section>
 
       {/* Form */}
       <section className="py-16 md:py-20">
         <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-          >
+          <div>
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 md:p-10">
               <h2 className="font-display text-2xl font-bold text-gray-900 mb-1">
                 Business Details
@@ -337,7 +327,7 @@ export default function BusinessRegisterPage() {
                 </button>
               </form>
             </div>
-          </motion.div>
+          </div>
         </div>
       </section>
     </div>
