@@ -1,0 +1,426 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── ENUMS ───────────────────────────────────────────────
+
+enum Role {
+  USER
+  BUSINESS_OWNER
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum AuthProvider {
+  LOCAL
+  GOOGLE
+}
+
+enum ExperienceStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+  NO_SHOW
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum TransactionType {
+  PURCHASE
+  GIFT_SENT
+  GIFT_RECEIVED
+  REDEMPTION
+  REFUND
+  ADMIN_ADJUSTMENT
+}
+
+enum GiftStatus {
+  PENDING
+  CLAIMED
+  EXPIRED
+  CANCELLED
+}
+
+enum DifficultyLevel {
+  EASY
+  MODERATE
+  CHALLENGING
+}
+
+// ─── USER & AUTH ─────────────────────────────────────────
+
+model User {
+  id            String       @id @default(cuid())
+  email         String       @unique
+  passwordHash  String?
+  firstName     String
+  lastName      String
+  phone         String?
+  avatarUrl     String?
+  role          Role         @default(USER)
+  authProvider  AuthProvider  @default(LOCAL)
+  googleId      String?      @unique
+  emailVerified Boolean      @default(false)
+  isActive      Boolean      @default(true)
+  creditBalance Int          @default(0) // credits in cents
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  // Relations
+  businesses         Business[]
+  bookings           Booking[]
+  reviews            Review[]
+  creditTransactions CreditTransaction[]
+  giftsSent          Gift[]              @relation("GiftSender")
+  giftsReceived      Gift[]              @relation("GiftRecipient")
+  refreshTokens      RefreshToken[]
+  wishlist           WishlistItem[]
+  notifications      Notification[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@map("refresh_tokens")
+}
+
+// ─── BUSINESS ────────────────────────────────────────────
+
+model Business {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  phone       String?
+  email       String?
+  website     String?
+  logoUrl     String?
+  coverUrl    String?
+  address     String?
+  city        String?
+  region      String?
+  latitude    Float?
+  longitude   Float?
+  isVerified  Boolean  @default(false)
+  isActive    Boolean  @default(true)
+  ownerId     String
+  owner       User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  experiences Experience[]
+
+  @@map("businesses")
+}
+
+// ─── EXPERIENCE / ACTIVITY ───────────────────────────────
+
+model Category {
+  id          String       @id @default(cuid())
+  name        String       @unique
+  slug        String       @unique
+  description String?
+  iconUrl     String?
+  sortOrder   Int          @default(0)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  // Relations
+  experiences Experience[]
+
+  @@map("categories")
+}
+
+model Experience {
+  id               String           @id @default(cuid())
+  title            String
+  slug             String           @unique
+  shortDescription String
+  description      String
+  highlights       String[]         // array of highlight bullet points
+  includes         String[]         // what's included
+  whatToBring      String[]         // what to bring
+  priceCredits     Int              // price in credits (cents)
+  priceCurrency    Float            // price in USD for display
+  duration         Int              // duration in minutes
+  maxParticipants  Int
+  minParticipants  Int              @default(1)
+  difficulty       DifficultyLevel  @default(EASY)
+  minAge           Int?
+  address          String
+  city             String
+  region           String
+  latitude         Float?
+  longitude        Float?
+  coverImage       String?
+  status           ExperienceStatus @default(DRAFT)
+  averageRating    Float            @default(0)
+  totalReviews     Int              @default(0)
+  totalBookings    Int              @default(0)
+  featured         Boolean          @default(false)
+  categoryId       String
+  category         Category         @relation(fields: [categoryId], references: [id])
+  businessId       String
+  business         Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  // Relations
+  images    ExperienceImage[]
+  sessions  ExperienceSession[]
+  bookings  Booking[]
+  reviews   Review[]
+  wishlist  WishlistItem[]
+  giftItems GiftItem[]
+
+  @@map("experiences")
+}
+
+model ExperienceImage {
+  id           String     @id @default(cuid())
+  url          String
+  alt          String?
+  sortOrder    Int        @default(0)
+  experienceId String
+  experience   Experience @relation(fields: [experienceId], references: [id], onDelete: Cascade)
+  createdAt    DateTime   @default(now())
+
+  @@map("experience_images")
+}
+
+model ExperienceSession {
+  id           String     @id @default(cuid())
+  experienceId String
+  experience   Experience @relation(fields: [experienceId], references: [id], onDelete: Cascade)
+  startTime    DateTime
+  endTime      DateTime
+  spotsLeft    Int
+  isActive     Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  // Relations
+  bookings Booking[]
+
+  @@map("experience_sessions")
+}
+
+// ─── BOOKING ─────────────────────────────────────────────
+
+model Booking {
+  id            String        @id @default(cuid())
+  userId        String
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  experienceId  String
+  experience    Experience    @relation(fields: [experienceId], references: [id])
+  sessionId     String
+  session       ExperienceSession @relation(fields: [sessionId], references: [id])
+  participants  Int           @default(1)
+  totalCredits  Int           // total credits charged
+  status        BookingStatus @default(PENDING)
+  specialNotes  String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  // Relations
+  payment Payment?
+
+  @@map("bookings")
+}
+
+// ─── PAYMENT ─────────────────────────────────────────────
+
+model Payment {
+  id              String        @id @default(cuid())
+  bookingId       String        @unique
+  booking         Booking       @relation(fields: [bookingId], references: [id])
+  amountCents     Int
+  currency        String        @default("USD")
+  status          PaymentStatus @default(PENDING)
+  paymentMethod   String?
+  transactionRef  String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@map("payments")
+}
+
+// ─── CREDITS & GIFTING ───────────────────────────────────
+
+model CreditTransaction {
+  id          String          @id @default(cuid())
+  userId      String
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount      Int             // positive = credit, negative = debit
+  type        TransactionType
+  description String?
+  referenceId String?         // booking ID, gift ID, etc.
+  createdAt   DateTime        @default(now())
+
+  @@map("credit_transactions")
+}
+
+model CreditPackage {
+  id          String  @id @default(cuid())
+  name        String
+  credits     Int     // credits in cents
+  priceUsd    Float
+  bonus       Int     @default(0) // bonus credits
+  isActive    Boolean @default(true)
+  sortOrder   Int     @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("credit_packages")
+}
+
+model Gift {
+  id              String     @id @default(cuid())
+  senderId        String
+  sender          User       @relation("GiftSender", fields: [senderId], references: [id])
+  recipientId     String?
+  recipient       User?      @relation("GiftRecipient", fields: [recipientId], references: [id])
+  recipientEmail  String
+  recipientName   String
+  message         String?
+  totalCredits    Int        // total credits gifted
+  code            String     @unique // redemption code
+  status          GiftStatus @default(PENDING)
+  sendEmail       Boolean    @default(false)
+  giftType        String     @default("credits") // "credits" or "experience"
+  claimedAt       DateTime?
+  expiresAt       DateTime
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  // Relations
+  items GiftItem[]
+
+  @@map("gifts")
+}
+
+model GiftItem {
+  id           String     @id @default(cuid())
+  giftId       String
+  gift         Gift       @relation(fields: [giftId], references: [id], onDelete: Cascade)
+  experienceId String?
+  experience   Experience? @relation(fields: [experienceId], references: [id])
+  credits      Int        // credits allocated to this item
+  tickets      Int        @default(1) // number of tickets/participants
+  createdAt    DateTime   @default(now())
+
+  @@map("gift_items")
+}
+
+// ─── REVIEWS ─────────────────────────────────────────────
+
+model Review {
+  id           String     @id @default(cuid())
+  userId       String
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  experienceId String
+  experience   Experience @relation(fields: [experienceId], references: [id], onDelete: Cascade)
+  rating       Int        // 1-5
+  comment      String?
+  isPublished  Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@unique([userId, experienceId])
+  @@map("reviews")
+}
+
+// ─── WISHLIST ────────────────────────────────────────────
+
+model WishlistItem {
+  id           String     @id @default(cuid())
+  userId       String
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  experienceId String
+  experience   Experience @relation(fields: [experienceId], references: [id], onDelete: Cascade)
+  createdAt    DateTime   @default(now())
+
+  @@unique([userId, experienceId])
+  @@map("wishlist_items")
+}
+
+// ─── NOTIFICATIONS ───────────────────────────────────────
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  message   String
+  type      String   // booking_confirmed, gift_received, etc.
+  isRead    Boolean  @default(false)
+  data      Json?    // extra metadata
+  createdAt DateTime @default(now())
+
+  @@map("notifications")
+}
+
+// ─── BUSINESS REGISTRATION ───────────────────────────────
+
+enum RegistrationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model BusinessRegistration {
+  id            String             @id @default(cuid())
+  businessName  String
+  description   String?
+  ownerName     String
+  ownerEmail    String
+  ownerPhone    String?
+  city          String?
+  region        String?
+  address       String?
+  website       String?
+  message       String?            // why they want to join
+  status        RegistrationStatus @default(PENDING)
+  reviewedBy    String?            // admin who reviewed
+  reviewNote    String?
+  userId        String?            // linked user if they have an account
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  @@map("business_registrations")
+}
+
+// ─── SITE SETTINGS ───────────────────────────────────────
+
+model SiteSetting {
+  id    String @id @default(cuid())
+  key   String @unique
+  value String
+
+  @@map("site_settings")
+}
