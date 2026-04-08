@@ -106,6 +106,7 @@ const EMPTY_EXP_FORM = {
   region: "",
   categoryId: "",
   coverImage: "",
+  status: "DRAFT",
 };
 
 type ExpForm = typeof EMPTY_EXP_FORM;
@@ -141,17 +142,11 @@ export default function BusinessPage() {
   const [expForm, setExpForm] = useState<ExpForm>({ ...EMPTY_EXP_FORM });
   const [savingExp, setSavingExp] = useState(false);
 
-  /* --- image state --- */
-  const [managingImagesFor, setManagingImagesFor] = useState<Experience | null>(null);
-  const [newImageUrl, setNewImageUrl] = useState("");
-  const [newImageAlt, setNewImageAlt] = useState("");
-  const [newImageSort, setNewImageSort] = useState("0");
+  /* --- image state (inline in edit form) --- */
   const [uploadingImage, setUploadingImage] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  /* --- cover image upload state --- */
-  const [uploadingCover, setUploadingCover] = useState(false);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
+  const [uploadingCover, setUploadingCover] = useState(false);
 
   /* ---- auth guard ---- */
   useEffect(() => {
@@ -229,6 +224,7 @@ export default function BusinessPage() {
       region: exp.region || "",
       categoryId: exp.categoryId || "",
       coverImage: exp.coverImage || "",
+      status: exp.status || "DRAFT",
     });
     setShowExpForm(true);
   };
@@ -258,6 +254,7 @@ export default function BusinessPage() {
       region: expForm.region || undefined,
       categoryId: expForm.categoryId || undefined,
       coverImage: expForm.coverImage || undefined,
+      status: expForm.status || undefined,
     };
   };
 
@@ -312,73 +309,42 @@ export default function BusinessPage() {
   };
 
   /* ================================================================ */
-  /* Image helpers                                                     */
+  /* Image helpers (work with editingExp inline in the form)           */
   /* ================================================================ */
   const handleSetCover = async (url: string) => {
-    if (!selectedBiz || !managingImagesFor) return;
+    if (!selectedBiz || !editingExp) return;
     try {
-      const updated = await api.put<Experience>(
-        `/api/businesses/${selectedBiz.id}/experiences/${managingImagesFor.id}`,
-        { coverImage: url }
-      );
-      setExperiences((prev) =>
-        prev.map((x) => (x.id === managingImagesFor.id ? { ...x, coverImage: url } : x))
-      );
-      setManagingImagesFor((prev) => (prev ? { ...prev, coverImage: url } : prev));
+      await api.put(`/api/businesses/${selectedBiz.id}/experiences/${editingExp.id}`, { coverImage: url });
+      setExpForm((prev) => ({ ...prev, coverImage: url }));
+      setEditingExp((prev) => (prev ? { ...prev, coverImage: url } : prev));
+      setExperiences((prev) => prev.map((x) => (x.id === editingExp.id ? { ...x, coverImage: url } : x)));
     } catch (err: any) {
       alert(err.message);
     }
   };
 
-  const handleAddImage = async () => {
-    if (!selectedBiz || !managingImagesFor || !newImageUrl) return;
-    try {
-      const img = await api.post<ExperienceImage>(
-        `/api/businesses/${selectedBiz.id}/experiences/${managingImagesFor.id}/images`,
-        { url: newImageUrl, alt: newImageAlt || undefined, sortOrder: Number(newImageSort) || 0 }
-      );
-      setExperiences((prev) =>
-        prev.map((x) =>
-          x.id === managingImagesFor.id
-            ? { ...x, images: [...(x.images || []), img] }
-            : x
-        )
-      );
-      setManagingImagesFor((prev) =>
-        prev ? { ...prev, images: [...(prev.images || []), img] } : prev
-      );
-      setNewImageUrl("");
-      setNewImageAlt("");
-      setNewImageSort("0");
-    } catch (err: any) {
-      alert(err.message);
-    }
-  };
-
-  const handleUploadImage = async (file: File) => {
-    if (!selectedBiz || !managingImagesFor) return;
+  const handleUploadGalleryImage = async (file: File) => {
+    if (!selectedBiz || !editingExp) return;
     setUploadingImage(true);
     try {
       const { url } = await uploadFile(file, "experiences");
       const img = await api.post<ExperienceImage>(
-        `/api/businesses/${selectedBiz.id}/experiences/${managingImagesFor.id}/images`,
-        { url, alt: file.name, sortOrder: (managingImagesFor.images?.length || 0) }
+        `/api/businesses/${selectedBiz.id}/experiences/${editingExp.id}/images`,
+        { url, alt: file.name, sortOrder: (editingExp.images?.length || 0) }
       );
       // Auto-set as cover if none exists
-      const shouldSetCover = !managingImagesFor.coverImage;
+      const shouldSetCover = !editingExp.coverImage && !expForm.coverImage;
       if (shouldSetCover) {
-        await api.put(`/api/businesses/${selectedBiz.id}/experiences/${managingImagesFor.id}`, { coverImage: url });
+        await api.put(`/api/businesses/${selectedBiz.id}/experiences/${editingExp.id}`, { coverImage: url });
+        setExpForm((prev) => ({ ...prev, coverImage: url }));
       }
-      setExperiences((prev) =>
-        prev.map((x) =>
-          x.id === managingImagesFor.id
-            ? { ...x, images: [...(x.images || []), img], ...(shouldSetCover ? { coverImage: url } : {}) }
-            : x
-        )
-      );
-      setManagingImagesFor((prev) =>
-        prev ? { ...prev, images: [...(prev.images || []), img], ...(shouldSetCover ? { coverImage: url } : {}) } : prev
-      );
+      const updatedExp = {
+        ...editingExp,
+        images: [...(editingExp.images || []), img],
+        ...(shouldSetCover ? { coverImage: url } : {}),
+      };
+      setEditingExp(updatedExp);
+      setExperiences((prev) => prev.map((x) => (x.id === editingExp.id ? updatedExp : x)));
     } catch (err: any) {
       alert(err.message);
     } finally {
@@ -386,19 +352,20 @@ export default function BusinessPage() {
     }
   };
 
-  const handleDeleteImage = async (imgId: string) => {
-    if (!selectedBiz || !managingImagesFor) return;
+  const handleDeleteImage = async (imgId: string, imgUrl: string) => {
+    if (!selectedBiz || !editingExp) return;
     try {
-      await api.delete(
-        `/api/businesses/${selectedBiz.id}/experiences/${managingImagesFor.id}/images/${imgId}`
-      );
-      const updated = (managingImagesFor.images || []).filter((i) => i.id !== imgId);
-      setExperiences((prev) =>
-        prev.map((x) =>
-          x.id === managingImagesFor.id ? { ...x, images: updated } : x
-        )
-      );
-      setManagingImagesFor((prev) => (prev ? { ...prev, images: updated } : prev));
+      await api.delete(`/api/businesses/${selectedBiz.id}/experiences/${editingExp.id}/images/${imgId}`);
+      const updatedImages = (editingExp.images || []).filter((i) => i.id !== imgId);
+      // If deleted image was the cover, clear it
+      const wasCover = expForm.coverImage === imgUrl;
+      if (wasCover) {
+        await api.put(`/api/businesses/${selectedBiz.id}/experiences/${editingExp.id}`, { coverImage: null });
+        setExpForm((prev) => ({ ...prev, coverImage: "" }));
+      }
+      const updatedExp = { ...editingExp, images: updatedImages, ...(wasCover ? { coverImage: undefined } : {}) };
+      setEditingExp(updatedExp);
+      setExperiences((prev) => prev.map((x) => (x.id === editingExp.id ? { ...x, images: updatedImages, ...(wasCover ? { coverImage: undefined } : {}) } : x)));
     } catch (err: any) {
       alert(err.message);
     }
@@ -430,131 +397,6 @@ export default function BusinessPage() {
       default:
         return "bg-gray-100 text-gray-600";
     }
-  };
-
-  /* ================================================================ */
-  /* RENDER: Image management modal                                    */
-  /* ================================================================ */
-  const renderImageModal = () => {
-    if (!managingImagesFor) return null;
-    const images = managingImagesFor.images || [];
-    return (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-        <div className="bg-white rounded-2xl p-8 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-          <div className="flex items-center justify-between mb-5">
-            <h2 className="text-xl font-bold text-gray-900 font-display">
-              Images - {managingImagesFor.title}
-            </h2>
-            <button onClick={() => setManagingImagesFor(null)} className="text-gray-400 hover:text-gray-600">
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-
-          {/* existing images */}
-          {images.length > 0 && (
-            <div className="grid grid-cols-3 gap-3 mb-6">
-              {images.map((img) => {
-                const isCover = managingImagesFor.coverImage === img.url;
-                return (
-                  <div key={img.id} className={`relative group rounded-xl overflow-hidden border-2 ${isCover ? "border-cedar-500" : "border-gray-200"}`}>
-                    <img src={img.url} alt={img.alt || ""} className="w-full h-28 object-cover" />
-                    {isCover && (
-                      <span className="absolute top-1 left-1 bg-cedar-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-md">
-                        COVER
-                      </span>
-                    )}
-                    <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5">
-                      {!isCover && (
-                        <button
-                          onClick={() => handleSetCover(img.url)}
-                          className="bg-white text-gray-700 rounded-lg p-1.5" title="Set as cover"
-                        >
-                          <Star className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                      <button
-                        onClick={() => handleDeleteImage(img.id)}
-                        className="bg-red-500 text-white rounded-lg p-1.5" title="Delete"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                    {img.alt && (
-                      <p className="text-xs text-gray-500 px-2 py-1 truncate">{img.alt}</p>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {images.length === 0 && (
-            <p className="text-sm text-gray-400 mb-6">No images yet. Upload images and set one as the cover.</p>
-          )}
-
-          {/* upload file */}
-          <div className="mb-4">
-            <label className="text-sm font-medium text-gray-700 mb-1 block">Upload a file</label>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) handleUploadImage(f);
-                e.target.value = "";
-              }}
-            />
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploadingImage}
-              className="btn-secondary text-sm inline-flex items-center gap-1.5 disabled:opacity-50"
-            >
-              <Upload className="w-4 h-4" />
-              {uploadingImage ? "Uploading..." : "Choose File"}
-            </button>
-          </div>
-
-          {/* or add by URL */}
-          <div className="border-t border-gray-100 pt-4 space-y-3">
-            <p className="text-sm font-medium text-gray-700">Or add by URL</p>
-            <input
-              type="text"
-              value={newImageUrl}
-              onChange={(e) => setNewImageUrl(e.target.value)}
-              className={inputCls}
-              placeholder="Image URL"
-            />
-            <div className="grid grid-cols-2 gap-3">
-              <input
-                type="text"
-                value={newImageAlt}
-                onChange={(e) => setNewImageAlt(e.target.value)}
-                className={inputCls}
-                placeholder="Alt text (optional)"
-              />
-              <input
-                type="number"
-                value={newImageSort}
-                onChange={(e) => setNewImageSort(e.target.value)}
-                className={inputCls}
-                placeholder="Sort order"
-              />
-            </div>
-            <button
-              type="button"
-              onClick={handleAddImage}
-              disabled={!newImageUrl}
-              className="btn-primary text-sm disabled:opacity-50"
-            >
-              Add Image
-            </button>
-          </div>
-        </div>
-      </div>
-    );
   };
 
   /* ================================================================ */
@@ -720,55 +562,116 @@ export default function BusinessPage() {
               ))}
             </select>
 
-            {/* cover image with upload */}
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Cover Image</label>
-              {expForm.coverImage ? (
-                <div className="relative group rounded-xl overflow-hidden border border-gray-200">
-                  <img
-                    src={expForm.coverImage}
-                    alt="Cover preview"
-                    className="w-full h-40 object-cover"
-                  />
-                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
+            {/* status */}
+            {editingExp && (
+              <div>
+                <label className="text-sm font-medium text-gray-700 mb-1 block">Status</label>
+                <div className="flex gap-2">
+                  {["DRAFT", "ACTIVE", "PAUSED", "ARCHIVED"].map((s) => (
                     <button
+                      key={s}
                       type="button"
-                      onClick={() => coverInputRef.current?.click()}
-                      className="bg-white text-gray-700 rounded-lg px-3 py-1.5 text-sm font-medium flex items-center gap-1.5"
+                      onClick={() => setExpForm({ ...expForm, status: s })}
+                      className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
+                        expForm.status === s
+                          ? s === "ACTIVE" ? "bg-green-600 text-white" :
+                            s === "DRAFT" ? "bg-gray-600 text-white" :
+                            s === "PAUSED" ? "bg-yellow-500 text-white" :
+                            "bg-red-500 text-white"
+                          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                      }`}
                     >
-                      <Upload className="w-4 h-4" /> Replace
+                      {s.charAt(0) + s.slice(1).toLowerCase()}
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => setExpForm({ ...expForm, coverImage: "" })}
-                      className="bg-red-500 text-white rounded-lg px-3 py-1.5 text-sm font-medium flex items-center gap-1.5"
-                    >
-                      <Trash2 className="w-4 h-4" /> Remove
-                    </button>
-                  </div>
+                  ))}
                 </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => coverInputRef.current?.click()}
-                  disabled={uploadingCover}
-                  className="w-full h-40 border-2 border-dashed border-gray-300 rounded-xl flex flex-col items-center justify-center gap-2 text-gray-400 hover:border-cedar-400 hover:text-cedar-600 transition-colors disabled:opacity-50"
-                >
-                  <Upload className="w-8 h-8" />
-                  <span className="text-sm font-medium">{uploadingCover ? "Uploading..." : "Upload cover image"}</span>
-                </button>
+              </div>
+            )}
+
+            {/* images section */}
+            <div className="border-t border-gray-100 pt-4">
+              <div className="flex items-center justify-between mb-3">
+                <label className="text-sm font-medium text-gray-700">Images</label>
+                {editingExp && (
+                  <button
+                    type="button"
+                    onClick={() => galleryInputRef.current?.click()}
+                    disabled={uploadingImage}
+                    className="text-sm text-cedar-600 hover:text-cedar-700 font-medium flex items-center gap-1 disabled:opacity-50"
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    {uploadingImage ? "Uploading..." : "Add image"}
+                  </button>
+                )}
+              </div>
+
+              {/* gallery grid (only when editing existing experience) */}
+              {editingExp && (editingExp.images?.length || 0) > 0 && (
+                <div className="grid grid-cols-4 gap-2 mb-3">
+                  {editingExp.images!.map((img) => {
+                    const isCover = expForm.coverImage === img.url;
+                    return (
+                      <div key={img.id} className={`relative group rounded-lg overflow-hidden border-2 ${isCover ? "border-cedar-500" : "border-gray-200"}`}>
+                        <img src={img.url} alt={img.alt || ""} className="w-full h-20 object-cover" />
+                        {isCover && (
+                          <span className="absolute top-0.5 left-0.5 bg-cedar-600 text-white text-[9px] font-bold px-1 py-0.5 rounded">
+                            COVER
+                          </span>
+                        )}
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1">
+                          {!isCover && (
+                            <button type="button" onClick={() => handleSetCover(img.url)}
+                              className="bg-white text-gray-700 rounded p-1" title="Set as cover">
+                              <Star className="w-3 h-3" />
+                            </button>
+                          )}
+                          <button type="button" onClick={() => handleDeleteImage(img.id, img.url)}
+                            className="bg-red-500 text-white rounded p-1" title="Delete">
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               )}
-              <input
-                ref={coverInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) handleCoverUpload(f);
-                  e.target.value = "";
-                }}
-              />
+
+              {editingExp && (!editingExp.images || editingExp.images.length === 0) && (
+                <p className="text-xs text-gray-400 mb-3">No images yet. Upload to add to gallery.</p>
+              )}
+
+              {/* cover image preview / upload (for new experience or standalone cover) */}
+              {!editingExp && (
+                <>
+                  {expForm.coverImage ? (
+                    <div className="relative group rounded-xl overflow-hidden border border-gray-200">
+                      <img src={expForm.coverImage} alt="Cover preview" className="w-full h-40 object-cover" />
+                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
+                        <button type="button" onClick={() => coverInputRef.current?.click()}
+                          className="bg-white text-gray-700 rounded-lg px-3 py-1.5 text-sm font-medium flex items-center gap-1.5">
+                          <Upload className="w-4 h-4" /> Replace
+                        </button>
+                        <button type="button" onClick={() => setExpForm({ ...expForm, coverImage: "" })}
+                          className="bg-red-500 text-white rounded-lg px-3 py-1.5 text-sm font-medium flex items-center gap-1.5">
+                          <Trash2 className="w-4 h-4" /> Remove
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button type="button" onClick={() => coverInputRef.current?.click()} disabled={uploadingCover}
+                      className="w-full h-32 border-2 border-dashed border-gray-300 rounded-xl flex flex-col items-center justify-center gap-2 text-gray-400 hover:border-cedar-400 hover:text-cedar-600 transition-colors disabled:opacity-50">
+                      <Upload className="w-6 h-6" />
+                      <span className="text-sm font-medium">{uploadingCover ? "Uploading..." : "Upload cover image"}</span>
+                    </button>
+                  )}
+                </>
+              )}
+
+              {/* hidden file inputs */}
+              <input ref={coverInputRef} type="file" accept="image/*" className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) handleCoverUpload(f); e.target.value = ""; }} />
+              <input ref={galleryInputRef} type="file" accept="image/*" className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadGalleryImage(f); e.target.value = ""; }} />
             </div>
 
             <div className="flex gap-3 pt-2">
@@ -907,13 +810,6 @@ export default function BusinessPage() {
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
                     <button
-                      onClick={() => setManagingImagesFor(exp)}
-                      className="p-2 text-gray-400 hover:text-cedar-600 hover:bg-cedar-50 rounded-lg transition-colors"
-                      title="Manage images"
-                    >
-                      <Image className="w-4 h-4" />
-                    </button>
-                    <button
                       onClick={() => openEditExp(exp)}
                       className="p-2 text-gray-400 hover:text-cedar-600 hover:bg-cedar-50 rounded-lg transition-colors"
                       title="Edit"
@@ -955,7 +851,6 @@ export default function BusinessPage() {
         </div>
 
         {renderExpForm()}
-        {renderImageModal()}
       </div>
     );
   }
