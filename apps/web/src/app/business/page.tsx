@@ -264,9 +264,20 @@ export default function BusinessPage() {
   const handleSaveExp = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedBiz) return;
+    const payload = buildExpPayload();
+    if (!editingExp) {
+      // Validate required fields for create
+      if (!payload.duration) { alert("Duration is required"); return; }
+      if (!payload.maxParticipants) { alert("Max participants is required"); return; }
+      if (!payload.address) { alert("Address is required"); return; }
+      if (!payload.city) { alert("City is required"); return; }
+      if (!payload.region) { alert("Region is required"); return; }
+      if (!payload.categoryId) { alert("Category is required"); return; }
+      if (!payload.priceCredits) { alert("Price (credits) is required"); return; }
+      if (!payload.priceCurrency) { alert("Price (currency) is required"); return; }
+    }
     setSavingExp(true);
     try {
-      const payload = buildExpPayload();
       if (editingExp) {
         const updated = await api.put<Experience>(
           `/api/businesses/${selectedBiz.id}/experiences/${editingExp.id}`,

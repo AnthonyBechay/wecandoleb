@@ -130,8 +130,8 @@ router.post("/:businessId/experiences", authenticate, async (req: AuthRequest, r
       difficulty, minAge, address, city, region, coverImage, categoryId,
     } = req.body;
 
-    if (!title) {
-      res.status(400).json({ error: "title is required" });
+    if (!title || !duration || !maxParticipants || !categoryId || !address || !city || !region) {
+      res.status(400).json({ error: "title, duration, maxParticipants, categoryId, address, city, and region are required" });
       return;
     }
 
@@ -167,7 +167,8 @@ router.post("/:businessId/experiences", authenticate, async (req: AuthRequest, r
     });
 
     res.status(201).json(experience);
-  } catch {
+  } catch (err) {
+    console.error("Create experience error:", err);
     res.status(500).json({ error: "Failed to create experience" });
   }
 });
