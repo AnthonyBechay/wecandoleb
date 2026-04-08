@@ -314,6 +314,22 @@ export default function BusinessPage() {
   /* ================================================================ */
   /* Image helpers                                                     */
   /* ================================================================ */
+  const handleSetCover = async (url: string) => {
+    if (!selectedBiz || !managingImagesFor) return;
+    try {
+      const updated = await api.put<Experience>(
+        `/api/businesses/${selectedBiz.id}/experiences/${managingImagesFor.id}`,
+        { coverImage: url }
+      );
+      setExperiences((prev) =>
+        prev.map((x) => (x.id === managingImagesFor.id ? { ...x, coverImage: url } : x))
+      );
+      setManagingImagesFor((prev) => (prev ? { ...prev, coverImage: url } : prev));
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
   const handleAddImage = async () => {
     if (!selectedBiz || !managingImagesFor || !newImageUrl) return;
     try {
@@ -348,15 +364,20 @@ export default function BusinessPage() {
         `/api/businesses/${selectedBiz.id}/experiences/${managingImagesFor.id}/images`,
         { url, alt: file.name, sortOrder: (managingImagesFor.images?.length || 0) }
       );
+      // Auto-set as cover if none exists
+      const shouldSetCover = !managingImagesFor.coverImage;
+      if (shouldSetCover) {
+        await api.put(`/api/businesses/${selectedBiz.id}/experiences/${managingImagesFor.id}`, { coverImage: url });
+      }
       setExperiences((prev) =>
         prev.map((x) =>
           x.id === managingImagesFor.id
-            ? { ...x, images: [...(x.images || []), img] }
+            ? { ...x, images: [...(x.images || []), img], ...(shouldSetCover ? { coverImage: url } : {}) }
             : x
         )
       );
       setManagingImagesFor((prev) =>
-        prev ? { ...prev, images: [...(prev.images || []), img] } : prev
+        prev ? { ...prev, images: [...(prev.images || []), img], ...(shouldSetCover ? { coverImage: url } : {}) } : prev
       );
     } catch (err: any) {
       alert(err.message);
@@ -432,25 +453,43 @@ export default function BusinessPage() {
           {/* existing images */}
           {images.length > 0 && (
             <div className="grid grid-cols-3 gap-3 mb-6">
-              {images.map((img) => (
-                <div key={img.id} className="relative group rounded-xl overflow-hidden border border-gray-200">
-                  <img src={img.url} alt={img.alt || ""} className="w-full h-28 object-cover" />
-                  <button
-                    onClick={() => handleDeleteImage(img.id)}
-                    className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                  {img.alt && (
-                    <p className="text-xs text-gray-500 px-2 py-1 truncate">{img.alt}</p>
-                  )}
-                </div>
-              ))}
+              {images.map((img) => {
+                const isCover = managingImagesFor.coverImage === img.url;
+                return (
+                  <div key={img.id} className={`relative group rounded-xl overflow-hidden border-2 ${isCover ? "border-cedar-500" : "border-gray-200"}`}>
+                    <img src={img.url} alt={img.alt || ""} className="w-full h-28 object-cover" />
+                    {isCover && (
+                      <span className="absolute top-1 left-1 bg-cedar-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-md">
+                        COVER
+                      </span>
+                    )}
+                    <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5">
+                      {!isCover && (
+                        <button
+                          onClick={() => handleSetCover(img.url)}
+                          className="bg-white text-gray-700 rounded-lg p-1.5" title="Set as cover"
+                        >
+                          <Star className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      <button
+                        onClick={() => handleDeleteImage(img.id)}
+                        className="bg-red-500 text-white rounded-lg p-1.5" title="Delete"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    {img.alt && (
+                      <p className="text-xs text-gray-500 px-2 py-1 truncate">{img.alt}</p>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
 
           {images.length === 0 && (
-            <p className="text-sm text-gray-400 mb-6">No images yet.</p>
+            <p className="text-sm text-gray-400 mb-6">No images yet. Upload images and set one as the cover.</p>
           )}
 
           {/* upload file */}
@@ -684,42 +723,52 @@ export default function BusinessPage() {
             {/* cover image with upload */}
             <div>
               <label className="text-sm font-medium text-gray-700 mb-1 block">Cover Image</label>
-              <div className="flex gap-2 items-center">
-                <input
-                  type="text"
-                  value={expForm.coverImage}
-                  onChange={(e) => setExpForm({ ...expForm, coverImage: e.target.value })}
-                  className={`${inputCls} flex-1`}
-                  placeholder="Cover image URL"
-                />
-                <input
-                  ref={coverInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) handleCoverUpload(f);
-                    e.target.value = "";
-                  }}
-                />
+              {expForm.coverImage ? (
+                <div className="relative group rounded-xl overflow-hidden border border-gray-200">
+                  <img
+                    src={expForm.coverImage}
+                    alt="Cover preview"
+                    className="w-full h-40 object-cover"
+                  />
+                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => coverInputRef.current?.click()}
+                      className="bg-white text-gray-700 rounded-lg px-3 py-1.5 text-sm font-medium flex items-center gap-1.5"
+                    >
+                      <Upload className="w-4 h-4" /> Replace
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setExpForm({ ...expForm, coverImage: "" })}
+                      className="bg-red-500 text-white rounded-lg px-3 py-1.5 text-sm font-medium flex items-center gap-1.5"
+                    >
+                      <Trash2 className="w-4 h-4" /> Remove
+                    </button>
+                  </div>
+                </div>
+              ) : (
                 <button
                   type="button"
                   onClick={() => coverInputRef.current?.click()}
                   disabled={uploadingCover}
-                  className="btn-secondary text-sm shrink-0 inline-flex items-center gap-1 disabled:opacity-50"
+                  className="w-full h-40 border-2 border-dashed border-gray-300 rounded-xl flex flex-col items-center justify-center gap-2 text-gray-400 hover:border-cedar-400 hover:text-cedar-600 transition-colors disabled:opacity-50"
                 >
-                  <Upload className="w-4 h-4" />
-                  {uploadingCover ? "..." : "Upload"}
+                  <Upload className="w-8 h-8" />
+                  <span className="text-sm font-medium">{uploadingCover ? "Uploading..." : "Upload cover image"}</span>
                 </button>
-              </div>
-              {expForm.coverImage && (
-                <img
-                  src={expForm.coverImage}
-                  alt="Cover preview"
-                  className="mt-2 w-full h-32 object-cover rounded-xl border border-gray-200"
-                />
               )}
+              <input
+                ref={coverInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) handleCoverUpload(f);
+                  e.target.value = "";
+                }}
+              />
             </div>
 
             <div className="flex gap-3 pt-2">
@@ -885,12 +934,18 @@ export default function BusinessPage() {
                 {exp.images && exp.images.length > 0 && (
                   <div className="flex gap-2 mt-3 overflow-x-auto">
                     {exp.images.map((img) => (
-                      <img
-                        key={img.id}
-                        src={img.url}
-                        alt={img.alt || ""}
-                        className="w-16 h-16 rounded-lg object-cover border border-gray-100 shrink-0"
-                      />
+                      <div key={img.id} className="relative shrink-0">
+                        <img
+                          src={img.url}
+                          alt={img.alt || ""}
+                          className={`w-16 h-16 rounded-lg object-cover border-2 ${exp.coverImage === img.url ? "border-cedar-500" : "border-gray-100"}`}
+                        />
+                        {exp.coverImage === img.url && (
+                          <span className="absolute -top-1 -right-1 bg-cedar-600 text-white rounded-full p-0.5">
+                            <Star className="w-2.5 h-2.5 fill-current" />
+                          </span>
+                        )}
+                      </div>
                     ))}
                   </div>
                 )}
