@@ -15,7 +15,8 @@ COPY apps/backend/ apps/backend/
 
 RUN pnpm --filter @wecandoleb/shared build
 RUN cd apps/backend && npx prisma generate
+RUN cd apps/backend && npx tsc
 
 EXPOSE 10000
 
-CMD ["sh", "-c", "cd apps/backend && npx prisma migrate deploy && (node prisma/seed.js || echo 'Seed skipped') && node dist/index.js"]
+CMD ["sh", "-c", "cd apps/backend && npx prisma db push --force-reset && npx tsx prisma/seed.ts && node dist/index.js"]
