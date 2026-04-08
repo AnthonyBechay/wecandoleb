@@ -35,7 +35,7 @@ RUN pnpm install --frozen-lockfile --prod
 
 COPY --from=builder /app/apps/web/.next apps/web/.next
 COPY --from=builder /app/apps/web/public apps/web/public
-COPY --from=builder /app/apps/web/next.config.ts apps/web/
+COPY --from=builder /app/apps/web/next.config.mjs apps/web/
 
 EXPOSE 3000
 
