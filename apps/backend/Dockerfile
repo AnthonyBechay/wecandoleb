@@ -19,4 +19,4 @@ RUN cd apps/backend && npx tsc
 
 EXPOSE 10000
 
-CMD ["sh", "-c", "cd apps/backend && npx prisma db push --force-reset && npx tsx prisma/seed.ts && node dist/index.js"]
+CMD ["sh", "-c", "cd apps/backend && npx prisma db push && node dist/index.js"]
