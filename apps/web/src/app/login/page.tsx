@@ -4,9 +4,17 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
-import { Eye, EyeOff, Mail, Lock } from "lucide-react";
+import { Eye, EyeOff, Mail, Lock, ShieldCheck, Shield, Building2, User } from "lucide-react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:10000";
+
+// Seeded sample accounts (see apps/backend/prisma/seed.ts) — one-click demo access.
+const DEMO_ACCOUNTS = [
+  { label: "Super Admin", name: "Admin", email: "admin@wecandoleb.com", password: "admin123!", icon: ShieldCheck, color: "bg-wine-50 text-wine-700 hover:bg-wine-100" },
+  { label: "Admin", name: "Nadia", email: "moderator@wecandoleb.com", password: "admin123!", icon: Shield, color: "bg-blue-50 text-blue-700 hover:bg-blue-100" },
+  { label: "Business Owner", name: "Karim", email: "owner@wecandoleb.com", password: "owner123!", icon: Building2, color: "bg-cedar-50 text-cedar-700 hover:bg-cedar-100" },
+  { label: "Customer", name: "Lea", email: "user@wecandoleb.com", password: "user123!", icon: User, color: "bg-sunset-50 text-sunset-700 hover:bg-sunset-100" },
+] as const;
 
 export default function LoginPage() {
   const router = useRouter();
@@ -16,6 +24,7 @@ export default function LoginPage() {
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [demoLoading, setDemoLoading] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,6 +37,22 @@ export default function LoginPage() {
       setError(err.message || "Login failed");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDemoLogin = async (account: (typeof DEMO_ACCOUNTS)[number]) => {
+    setError("");
+    // Autofill the visible form so it's clear which account is used
+    setEmail(account.email);
+    setPassword(account.password);
+    setDemoLoading(account.email);
+    try {
+      await login(account.email, account.password);
+      router.push("/dashboard");
+    } catch (err: any) {
+      setError(err.message || "Demo login failed. Have you seeded the database?");
+    } finally {
+      setDemoLoading(null);
     }
   };
 
@@ -103,6 +128,37 @@ export default function LoginPage() {
             Don&apos;t have an account?{" "}
             <Link href="/register" className="text-cedar-700 font-semibold hover:underline">Create one</Link>
           </p>
+        </div>
+
+        {/* Quick demo access */}
+        <div className="mt-6 bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+          <div className="text-center mb-4">
+            <p className="text-sm font-semibold text-gray-800">Explore with a sample account</p>
+            <p className="text-xs text-gray-500 mt-0.5">One click autofills the form and signs you in</p>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            {DEMO_ACCOUNTS.map((acc) => {
+              const Icon = acc.icon;
+              const isLoading = demoLoading === acc.email;
+              return (
+                <button
+                  key={acc.email}
+                  type="button"
+                  onClick={() => handleDemoLogin(acc)}
+                  disabled={!!demoLoading}
+                  className={`flex items-center gap-3 p-3 rounded-xl text-left transition disabled:opacity-60 ${acc.color}`}
+                >
+                  <div className="w-9 h-9 rounded-lg bg-white/70 flex items-center justify-center shrink-0">
+                    <Icon className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold leading-tight truncate">{acc.label}</p>
+                    <p className="text-xs opacity-70 truncate">{isLoading ? "Signing in…" : acc.name}</p>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
     </div>

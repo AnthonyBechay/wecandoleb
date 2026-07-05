@@ -666,6 +666,86 @@ Whether you're a beginner or experienced practitioner, this retreat is designed 
     });
   }
 
+  // ── Provider Meetings (external / direct bookings) ─────
+  // A few manually-added meetings spread across the current month so the
+  // provider Schedule view is populated out of the box.
+  const now = new Date();
+  const atDay = (day: number, hour: number, minute = 0) =>
+    new Date(now.getFullYear(), now.getMonth(), day, hour, minute);
+
+  const providerMeetings = [
+    {
+      id: "meeting-1",
+      businessId: business1.id,
+      experienceId: "exp-1",
+      title: "Private wine tasting — Haddad family reunion",
+      startTime: atDay(6, 11),
+      endTime: atDay(6, 13),
+      headcount: 8,
+      location: "Batroun Old Souk Road",
+      customerName: "Rita Haddad",
+      customerPhone: "+961 3 123 456",
+      notes: "Booked by phone. Requested extra cheese platter.",
+    },
+    {
+      id: "meeting-2",
+      businessId: business2.id,
+      experienceId: "exp-2",
+      title: "Corporate soap-making team building",
+      startTime: atDay(12, 15),
+      endTime: atDay(12, 17),
+      headcount: 15,
+      location: "Khan el-Saboun, Old Souk",
+      customerName: "MedNet HR",
+      customerPhone: "+961 1 555 200",
+      notes: "Invoice to company. 15 kits needed.",
+    },
+    {
+      id: "meeting-3",
+      businessId: business3.id,
+      title: "Walk-in group — Bekaa day tour",
+      startTime: atDay(18, 9),
+      endTime: atDay(18, 18),
+      headcount: 4,
+      location: "Pickup: Downtown Beirut",
+      customerName: "Tourists (walk-in)",
+      notes: "Cash payment on the day.",
+    },
+    {
+      id: "meeting-4",
+      businessId: business4.id,
+      experienceId: "exp-3",
+      title: "School trip — Cedars guided hike",
+      startTime: atDay(22, 8, 30),
+      endTime: atDay(22, 13),
+      headcount: 24,
+      location: "Cedars of God, Bsharri",
+      customerName: "Collège des Saints-Cœurs",
+      customerPhone: "+961 6 671 000",
+      notes: "Grade 10 class. Two chaperones included in headcount.",
+    },
+    {
+      id: "meeting-5",
+      businessId: business1.id,
+      title: "Vineyard photoshoot booking",
+      startTime: atDay(27, 16),
+      endTime: atDay(27, 18),
+      headcount: 3,
+      location: "Batroun Vineyards",
+      customerName: "Studio Lumière",
+      notes: "Golden-hour shoot for a magazine.",
+    },
+  ];
+
+  for (const m of providerMeetings) {
+    const { id, ...data } = m;
+    await prisma.providerMeeting.upsert({
+      where: { id },
+      update: {},
+      create: { id, ...data, source: "EXTERNAL", status: "SCHEDULED" },
+    });
+  }
+
   console.log("Seed complete!");
   console.log("  - 6 categories");
   console.log("  - 7 users (superadmin, admin, business owner, 4 demo/reviewer users)");

@@ -65,6 +65,17 @@ enum DifficultyLevel {
   CHALLENGING
 }
 
+enum MeetingSource {
+  PLATFORM  // booked through WeCanDoLeb
+  EXTERNAL  // booked directly (phone, walk-in, another channel)
+}
+
+enum MeetingStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+}
+
 // ─── USER & AUTH ─────────────────────────────────────────
 
 model User {
@@ -134,6 +145,7 @@ model Business {
 
   // Relations
   experiences Experience[]
+  meetings    ProviderMeeting[]
 
   @@map("businesses")
 }
@@ -197,6 +209,7 @@ model Experience {
   reviews   Review[]
   wishlist  WishlistItem[]
   giftItems GiftItem[]
+  meetings  ProviderMeeting[]
 
   @@map("experiences")
 }
@@ -413,6 +426,34 @@ model BusinessRegistration {
   updatedAt     DateTime           @updatedAt
 
   @@map("business_registrations")
+}
+
+// ─── PROVIDER MEETINGS / SCHEDULE ────────────────────────
+// Meetings an artisan / experience provider organizes. Includes bookings
+// made directly (outside the platform) so they can see their whole schedule
+// in one place. Platform bookings are derived from ExperienceSession/Booking.
+
+model ProviderMeeting {
+  id            String        @id @default(cuid())
+  businessId    String
+  business      Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  experienceId  String?
+  experience    Experience?   @relation(fields: [experienceId], references: [id], onDelete: SetNull)
+  title         String
+  startTime     DateTime
+  endTime       DateTime?
+  headcount     Int           @default(1)
+  location      String?
+  customerName  String?
+  customerPhone String?
+  notes         String?
+  source        MeetingSource @default(EXTERNAL)
+  status        MeetingStatus @default(SCHEDULED)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([businessId, startTime])
+  @@map("provider_meetings")
 }
 
 // ─── SITE SETTINGS ───────────────────────────────────────

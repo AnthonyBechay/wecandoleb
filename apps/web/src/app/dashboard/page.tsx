@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 import { useRouter } from "next/navigation";
-import { CreditCard, Gift, Calendar, ArrowRight, Star, TrendingUp } from "lucide-react";
+import { CreditCard, Gift, Calendar, ArrowRight, Star, TrendingUp, CalendarDays, Building2 } from "lucide-react";
 import { api } from "@/lib/api";
 
 export default function DashboardPage() {
@@ -26,6 +26,7 @@ export default function DashboardPage() {
   if (authLoading || !user) return <div className="min-h-screen flex items-center justify-center"><div className="w-8 h-8 border-4 border-cedar-600 border-t-transparent rounded-full animate-spin" /></div>;
 
   const upcomingBookings = bookings.filter((b) => b.status === "CONFIRMED").slice(0, 3);
+  const isProvider = ["BUSINESS_OWNER", "ADMIN", "SUPER_ADMIN"].includes(user.role);
 
   return (
     <div className="min-h-screen bg-gray-50 py-10">
@@ -69,6 +70,32 @@ export default function DashboardPage() {
             <p className="text-lg font-bold text-gray-900 capitalize">{user.role.toLowerCase().replace("_", " ")}</p>
           </div>
         </div>
+
+        {/* Provider tools */}
+        {isProvider && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-10">
+            <Link href="/schedule" className="flex items-center gap-4 bg-white rounded-2xl border border-gray-100 p-6 hover:border-cedar-300 hover:shadow-sm transition group">
+              <div className="w-12 h-12 rounded-xl bg-cedar-50 text-cedar-700 flex items-center justify-center shrink-0">
+                <CalendarDays className="w-6 h-6" />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-bold text-gray-900">My Schedule</h3>
+                <p className="text-sm text-gray-500">See all your meetings & guest counts</p>
+              </div>
+              <ArrowRight className="w-5 h-5 text-gray-400 group-hover:translate-x-1 transition-transform" />
+            </Link>
+            <Link href="/business" className="flex items-center gap-4 bg-white rounded-2xl border border-gray-100 p-6 hover:border-cedar-300 hover:shadow-sm transition group">
+              <div className="w-12 h-12 rounded-xl bg-sunset-50 text-sunset-600 flex items-center justify-center shrink-0">
+                <Building2 className="w-6 h-6" />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-bold text-gray-900">My Business</h3>
+                <p className="text-sm text-gray-500">Manage listings & experiences</p>
+              </div>
+              <ArrowRight className="w-5 h-5 text-gray-400 group-hover:translate-x-1 transition-transform" />
+            </Link>
+          </div>
+        )}
 
         {/* Quick actions */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">

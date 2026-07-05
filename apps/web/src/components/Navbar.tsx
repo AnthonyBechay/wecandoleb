@@ -1,14 +1,27 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
-import { Menu, X, Gift, CreditCard, User, LogOut, LayoutDashboard, Building2, ChevronDown } from "lucide-react";
+import { Menu, X, Gift, CreditCard, User, LogOut, LayoutDashboard, Building2, ChevronDown, CalendarDays } from "lucide-react";
 
 export default function Navbar() {
   const { user, logout } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const profileRef = useRef<HTMLDivElement>(null);
+
+  // Close the profile dropdown when clicking outside of it
+  useEffect(() => {
+    if (!profileOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
+        setProfileOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [profileOpen]);
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-b border-gray-100">
@@ -43,7 +56,7 @@ export default function Navbar() {
                   <CreditCard className="w-4 h-4" />
                   {(user.creditBalance / 100).toFixed(0)} credits
                 </Link>
-                <div className="relative">
+                <div className="relative" ref={profileRef}>
                   <button
                     onClick={() => setProfileOpen(!profileOpen)}
                     className="flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-gray-900 transition"
@@ -66,9 +79,14 @@ export default function Navbar() {
                         <Gift className="w-4 h-4" /> My Gifts
                       </Link>
                       {(user.role === "BUSINESS_OWNER" || user.role === "ADMIN" || user.role === "SUPER_ADMIN") && (
-                        <Link href="/business" className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50" onClick={() => setProfileOpen(false)}>
-                          <Building2 className="w-4 h-4" /> My Business
-                        </Link>
+                        <>
+                          <Link href="/business" className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50" onClick={() => setProfileOpen(false)}>
+                            <Building2 className="w-4 h-4" /> My Business
+                          </Link>
+                          <Link href="/schedule" className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50" onClick={() => setProfileOpen(false)}>
+                            <CalendarDays className="w-4 h-4" /> My Schedule
+                          </Link>
+                        </>
                       )}
                       {(user.role === "ADMIN" || user.role === "SUPER_ADMIN") && (
                         <Link href="/admin" className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50" onClick={() => setProfileOpen(false)}>
@@ -121,6 +139,15 @@ export default function Navbar() {
               <Link href="/bookings" className="block px-3 py-2 rounded-lg text-gray-700 hover:bg-gray-50" onClick={() => setMobileOpen(false)}>My Bookings</Link>
               <Link href="/credits" className="block px-3 py-2 rounded-lg text-gray-700 hover:bg-gray-50" onClick={() => setMobileOpen(false)}>Credits ({(user.creditBalance / 100).toFixed(0)})</Link>
               <Link href="/gifts" className="block px-3 py-2 rounded-lg text-gray-700 hover:bg-gray-50" onClick={() => setMobileOpen(false)}>My Gifts</Link>
+              {(user.role === "BUSINESS_OWNER" || user.role === "ADMIN" || user.role === "SUPER_ADMIN") && (
+                <>
+                  <Link href="/business" className="block px-3 py-2 rounded-lg text-gray-700 hover:bg-gray-50" onClick={() => setMobileOpen(false)}>My Business</Link>
+                  <Link href="/schedule" className="block px-3 py-2 rounded-lg text-gray-700 hover:bg-gray-50" onClick={() => setMobileOpen(false)}>My Schedule</Link>
+                </>
+              )}
+              {(user.role === "ADMIN" || user.role === "SUPER_ADMIN") && (
+                <Link href="/admin" className="block px-3 py-2 rounded-lg text-gray-700 hover:bg-gray-50" onClick={() => setMobileOpen(false)}>Admin Panel</Link>
+              )}
               <button onClick={() => { logout(); setMobileOpen(false); }} className="block w-full text-left px-3 py-2 rounded-lg text-red-600 hover:bg-red-50">Sign Out</button>
             </>
           ) : (

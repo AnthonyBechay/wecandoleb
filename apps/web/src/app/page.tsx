@@ -39,10 +39,13 @@ const categoryIcons: Record<string, React.ReactNode> = {
   "wellness": <Music className="w-6 h-6" />,
 };
 
+// Authentic Lebanon landmarks (Wikimedia Commons, freely licensed):
+// Raouché / Pigeon Rocks at sunset (Beirut), the Cedars of God (Bsharri),
+// and the Roman Temple of Bacchus (Baalbek).
 const heroImages = [
-  "https://images.unsplash.com/photo-1579606032821-4e6161c81571?w=1920&q=80",
-  "https://images.unsplash.com/photo-1518684079-3c830dcef090?w=1920&q=80",
-  "https://images.unsplash.com/photo-1549144511-f099e773c147?w=1920&q=80",
+  "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8c/A_sunset_on_the_Mediterranean_sea%2C_Pigeon_Rocks%2C_Beirut%2C_Lebanon.jpg/1920px-A_sunset_on_the_Mediterranean_sea%2C_Pigeon_Rocks%2C_Beirut%2C_Lebanon.jpg",
+  "https://upload.wikimedia.org/wikipedia/commons/thumb/9/90/Christian_chapel_on_the_slopes_of_Mount_Lebanon%2C_Cedars_of_God%2C_Lebanon.jpg/1920px-Christian_chapel_on_the_slopes_of_Mount_Lebanon%2C_Cedars_of_God%2C_Lebanon.jpg",
+  "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a1/Lebanon%2C_Baalbek%2C_Temple_of_Bacchus_2.jpg/1920px-Lebanon%2C_Baalbek%2C_Temple_of_Bacchus_2.jpg",
 ];
 
 export default function HomePage() {
@@ -260,10 +263,10 @@ export default function HomePage() {
           </div>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
             {[
-              { name: "Beirut", desc: "The vibrant capital", img: "https://images.unsplash.com/photo-1579606032821-4e6161c81571?w=600&q=75" },
-              { name: "Mount Lebanon", desc: "Mountains & heritage", img: "https://images.unsplash.com/photo-1518684079-3c830dcef090?w=600&q=75" },
-              { name: "North Lebanon", desc: "Tripoli, Batroun & beyond", img: "https://images.unsplash.com/photo-1549144511-f099e773c147?w=600&q=75" },
-              { name: "Bekaa Valley", desc: "Wine country", img: "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=600&q=75" },
+              { name: "Beirut", desc: "The vibrant capital", img: "https://upload.wikimedia.org/wikipedia/commons/thumb/4/43/Beirut_Corniche_from_Sea.JPG/1280px-Beirut_Corniche_from_Sea.JPG" },
+              { name: "Mount Lebanon", desc: "Mountains & heritage", img: "https://upload.wikimedia.org/wikipedia/commons/4/44/Byblos_Old_Port_of_the_city.jpg" },
+              { name: "North Lebanon", desc: "Tripoli, Batroun & beyond", img: "https://upload.wikimedia.org/wikipedia/commons/5/53/Forest_of_The_cedars_of_God.jpg" },
+              { name: "Bekaa Valley", desc: "Wine country", img: "https://upload.wikimedia.org/wikipedia/commons/thumb/b/bc/Vineyards-chateau-ksara-lebanese-winery-wine.jpg/1280px-Vineyards-chateau-ksara-lebanese-winery-wine.jpg" },
             ].map((region) => (
               <Link key={region.name} href={`/experiences?region=${region.name}`} className="relative group block h-64 rounded-2xl overflow-hidden">
                 <div

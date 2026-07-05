@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   Building2,
   Plus,
@@ -16,6 +17,7 @@ import {
   Star,
   Check,
   X,
+  CalendarDays,
 } from "lucide-react";
 import { api } from "@/lib/api";
 
@@ -864,9 +866,14 @@ export default function BusinessPage() {
         <div className="flex items-center justify-between mb-6">
           <h1 className="font-display text-3xl font-bold text-gray-900">My Businesses</h1>
           {(user.role === "BUSINESS_OWNER" || user.role === "ADMIN" || user.role === "SUPER_ADMIN") && (
-            <button onClick={() => setShowCreate(true)} className="btn-primary text-sm !py-2.5">
-              <Plus className="w-4 h-4 mr-1" /> Add Business
-            </button>
+            <div className="flex items-center gap-2">
+              <Link href="/schedule" className="btn-secondary text-sm !py-2.5 inline-flex items-center">
+                <CalendarDays className="w-4 h-4 mr-1" /> Schedule
+              </Link>
+              <button onClick={() => setShowCreate(true)} className="btn-primary text-sm !py-2.5">
+                <Plus className="w-4 h-4 mr-1" /> Add Business
+              </button>
+            </div>
           )}
         </div>
 
