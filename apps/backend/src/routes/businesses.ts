@@ -17,6 +17,129 @@ router.get("/mine", authenticate, async (req: AuthRequest, res: Response) => {
   }
 });
 
+// Business owner analytics: revenue, cost, profit & reservation stats
+// across all businesses the owner manages (optional ?businessId= to scope).
+router.get("/stats", authenticate, authorize("BUSINESS_OWNER", "ADMIN", "SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { businessId } = req.query as Record<string, string | undefined>;
+
+    const businesses = await prisma.business.findMany({
+      where: {
+        ownerId: req.authUser!.userId,
+        ...(businessId ? { id: businessId } : {}),
+      },
+      select: { id: true, name: true },
+    });
+    const bizIds = businesses.map((b) => b.id);
+
+    if (bizIds.length === 0) {
+      res.json({
+        businesses: [],
+        totals: { experiences: 0, activeExperiences: 0, bookings: 0, guests: 0,
+          revenueCredits: 0, costCredits: 0, profitCredits: 0, upcoming: 0, averageRating: 0 },
+        byStatus: {}, byExperience: [], recentBookings: [],
+      });
+      return;
+    }
+
+    const now = new Date();
+
+    const [experiences, bookings] = await Promise.all([
+      prisma.experience.findMany({
+        where: { businessId: { in: bizIds } },
+        select: {
+          id: true, title: true, status: true, priceCredits: true, costCredits: true,
+          priceCurrency: true, costCurrency: true, averageRating: true, totalReviews: true,
+        },
+      }),
+      prisma.booking.findMany({
+        where: { experience: { businessId: { in: bizIds } } },
+        select: {
+          id: true, status: true, participants: true, totalCredits: true, createdAt: true,
+          experience: { select: { id: true, title: true, costCredits: true } },
+          session: { select: { startTime: true } },
+          user: { select: { firstName: true, lastName: true } },
+        },
+        orderBy: { createdAt: "desc" },
+      }),
+    ]);
+
+    const REALIZED = new Set(["CONFIRMED", "COMPLETED"]);
+
+    const byStatus: Record<string, number> = {};
+    let guests = 0, revenueCredits = 0, costCredits = 0, upcoming = 0;
+
+    // Per-experience accumulators
+    const perExp: Record<string, any> = {};
+    for (const e of experiences) {
+      perExp[e.id] = {
+        id: e.id, title: e.title, status: e.status,
+        priceCredits: e.priceCredits, costCredits: e.costCredits,
+        unitsSold: 0, bookings: 0, revenueCredits: 0, costCredits_total: 0, profitCredits: 0,
+        averageRating: e.averageRating, totalReviews: e.totalReviews,
+      };
+    }
+
+    for (const b of bookings) {
+      byStatus[b.status] = (byStatus[b.status] || 0) + 1;
+      const realized = REALIZED.has(b.status);
+      if (realized) {
+        guests += b.participants;
+        revenueCredits += b.totalCredits;
+        const cost = (b.experience.costCredits || 0) * b.participants;
+        costCredits += cost;
+        const pe = perExp[b.experience.id];
+        if (pe) {
+          pe.unitsSold += b.participants;
+          pe.bookings += 1;
+          pe.revenueCredits += b.totalCredits;
+          pe.costCredits_total += cost;
+          pe.profitCredits += b.totalCredits - cost;
+        }
+      }
+      if (b.status === "CONFIRMED" && b.session && b.session.startTime > now) upcoming += 1;
+    }
+
+    const ratedExps = experiences.filter((e) => e.totalReviews > 0);
+    const averageRating = ratedExps.length
+      ? Math.round((ratedExps.reduce((s, e) => s + e.averageRating, 0) / ratedExps.length) * 10) / 10
+      : 0;
+
+    const byExperience = Object.values(perExp).sort((a: any, b: any) => b.revenueCredits - a.revenueCredits);
+
+    const recentBookings = bookings.slice(0, 12).map((b) => ({
+      id: b.id,
+      customer: `${b.user.firstName} ${b.user.lastName}`.trim(),
+      experience: b.experience.title,
+      participants: b.participants,
+      totalCredits: b.totalCredits,
+      status: b.status,
+      date: b.session?.startTime ?? b.createdAt,
+    }));
+
+    res.json({
+      businesses,
+      totals: {
+        experiences: experiences.length,
+        activeExperiences: experiences.filter((e) => e.status === "ACTIVE").length,
+        bookings: bookings.length,
+        guests,
+        revenueCredits,
+        costCredits,
+        profitCredits: revenueCredits - costCredits,
+        upcoming,
+        averageRating,
+      },
+      byStatus,
+      byExperience,
+      recentBookings,
+    });
+  } catch (err) {
+    console.error("Business stats error:", err);
+    res.status(500).json({ error: "Failed to fetch business stats" });
+  }
+});
+
 // Create business
 router.post("/", authenticate, authorize("BUSINESS_OWNER", "ADMIN", "SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
   try {
@@ -126,7 +249,7 @@ router.post("/:businessId/experiences", authenticate, async (req: AuthRequest, r
 
     const {
       title, shortDescription, description, highlights, includes, whatToBring,
-      priceCredits, priceCurrency, duration, maxParticipants, minParticipants,
+      priceCredits, priceCurrency, costCredits, costCurrency, duration, maxParticipants, minParticipants,
       difficulty, minAge, address, city, region, coverImage, categoryId,
     } = req.body;
 
@@ -148,6 +271,8 @@ router.post("/:businessId/experiences", authenticate, async (req: AuthRequest, r
         whatToBring: whatToBring || [],
         priceCredits,
         priceCurrency,
+        costCredits: costCredits ?? 0,
+        costCurrency: costCurrency ?? 0,
         duration,
         maxParticipants,
         minParticipants: minParticipants || 1,
@@ -196,7 +321,7 @@ router.put("/:businessId/experiences/:expId", authenticate, async (req: AuthRequ
 
     const {
       title, shortDescription, description, highlights, includes, whatToBring,
-      priceCredits, priceCurrency, duration, maxParticipants, minParticipants,
+      priceCredits, priceCurrency, costCredits, costCurrency, duration, maxParticipants, minParticipants,
       difficulty, minAge, address, city, region, coverImage, categoryId, status,
     } = req.body;
 
@@ -209,6 +334,8 @@ router.put("/:businessId/experiences/:expId", authenticate, async (req: AuthRequ
     if (whatToBring !== undefined) data.whatToBring = whatToBring;
     if (priceCredits !== undefined) data.priceCredits = priceCredits;
     if (priceCurrency !== undefined) data.priceCurrency = priceCurrency;
+    if (costCredits !== undefined) data.costCredits = costCredits;
+    if (costCurrency !== undefined) data.costCurrency = costCurrency;
     if (duration !== undefined) data.duration = duration;
     if (maxParticipants !== undefined) data.maxParticipants = maxParticipants;
     if (minParticipants !== undefined) data.minParticipants = minParticipants;

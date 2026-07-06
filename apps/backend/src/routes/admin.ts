@@ -2,8 +2,12 @@ import { Router, Request, Response } from "express";
 import bcrypt from "bcryptjs";
 import { prisma } from "../lib/prisma";
 import { authenticate, authorize, AuthRequest } from "../middleware/auth";
+import { logAudit, actorFromReq, ipFromReq } from "../lib/audit";
 
 const router = Router();
+
+// credits are stored in cents where 100 credits = $1.00
+const creditsToUsd = (credits: number) => Math.round((credits / 100) * 100) / 100;
 
 // Dashboard stats
 router.get("/stats", authenticate, authorize("ADMIN", "SUPER_ADMIN"), async (_req: AuthRequest, res: Response) => {
@@ -30,6 +34,174 @@ router.get("/stats", authenticate, authorize("ADMIN", "SUPER_ADMIN"), async (_re
     });
   } catch {
     res.status(500).json({ error: "Failed to fetch stats" });
+  }
+});
+
+// ─── ACCOUNTING ──────────────────────────────────────────
+// Money-in/out view of the credit economy. Credits are in cents (100cr = $1).
+router.get("/accounting", authenticate, authorize("ADMIN", "SUPER_ADMIN"), async (_req: AuthRequest, res: Response) => {
+  try {
+    const [byType, balanceAgg, bookingsAgg, giftAgg] = await Promise.all([
+      prisma.creditTransaction.groupBy({
+        by: ["type"],
+        _sum: { amount: true },
+        _count: true,
+      }),
+      prisma.user.aggregate({ _sum: { creditBalance: true } }),
+      prisma.booking.groupBy({
+        by: ["status"],
+        _sum: { totalCredits: true, participants: true },
+        _count: true,
+      }),
+      prisma.gift.groupBy({
+        by: ["status"],
+        _sum: { totalCredits: true },
+        _count: true,
+      }),
+    ]);
+
+    const flow: Record<string, { credits: number; count: number }> = {};
+    for (const row of byType) {
+      flow[row.type] = { credits: row._sum.amount || 0, count: row._count };
+    }
+
+    const purchased = flow["PURCHASE"]?.credits || 0;
+    const redeemed = Math.abs(flow["REDEMPTION"]?.credits || 0);
+    const gifted = Math.abs(flow["GIFT_SENT"]?.credits || 0);
+    const claimed = flow["GIFT_RECEIVED"]?.credits || 0;
+    const refunded = flow["REFUND"]?.credits || 0;
+    const adjustments = flow["ADMIN_ADJUSTMENT"]?.credits || 0;
+
+    const realized = bookingsAgg
+      .filter((b) => ["CONFIRMED", "COMPLETED"].includes(b.status))
+      .reduce((s, b) => s + (b._sum.totalCredits || 0), 0);
+
+    const outstanding = balanceAgg._sum.creditBalance || 0;
+
+    res.json({
+      currency: "USD",
+      creditsPerDollar: 100,
+      grossRevenue: {
+        credits: purchased,
+        usd: creditsToUsd(purchased),
+        transactions: flow["PURCHASE"]?.count || 0,
+      },
+      redeemedOnBookings: { credits: redeemed, usd: creditsToUsd(redeemed) },
+      giftedOut: { credits: gifted, usd: creditsToUsd(gifted) },
+      giftsClaimed: { credits: claimed, usd: creditsToUsd(claimed) },
+      refunded: { credits: refunded, usd: creditsToUsd(refunded) },
+      adminAdjustments: { credits: adjustments, usd: creditsToUsd(adjustments) },
+      outstandingLiability: { credits: outstanding, usd: creditsToUsd(outstanding) },
+      bookingRevenue: { credits: realized, usd: creditsToUsd(realized) },
+      bookingsByStatus: bookingsAgg.map((b) => ({
+        status: b.status,
+        count: b._count,
+        credits: b._sum.totalCredits || 0,
+        guests: b._sum.participants || 0,
+      })),
+      giftsByStatus: giftAgg.map((g) => ({
+        status: g.status,
+        count: g._count,
+        credits: g._sum.totalCredits || 0,
+      })),
+      transactionFlow: byType.map((t) => ({
+        type: t.type,
+        credits: t._sum.amount || 0,
+        count: t._count,
+      })),
+    });
+  } catch (err) {
+    console.error("Accounting error:", err);
+    res.status(500).json({ error: "Failed to fetch accounting" });
+  }
+});
+
+// ─── SALES ───────────────────────────────────────────────
+// What sold and how much: units (participants) and revenue per experience,
+// rolled up by category and business. Realized bookings only.
+router.get("/sales", authenticate, authorize("ADMIN", "SUPER_ADMIN"), async (_req: AuthRequest, res: Response) => {
+  try {
+    const bookings = await prisma.booking.findMany({
+      where: { status: { in: ["CONFIRMED", "COMPLETED"] } },
+      select: {
+        participants: true,
+        totalCredits: true,
+        experience: {
+          select: {
+            id: true, title: true,
+            category: { select: { id: true, name: true } },
+            business: { select: { id: true, name: true } },
+          },
+        },
+      },
+    });
+
+    const expMap: Record<string, any> = {};
+    const catMap: Record<string, any> = {};
+    const bizMap: Record<string, any> = {};
+    let totalUnits = 0, totalCredits = 0;
+
+    for (const b of bookings) {
+      const e = b.experience;
+      totalUnits += b.participants;
+      totalCredits += b.totalCredits;
+
+      const ex = (expMap[e.id] ||= { id: e.id, title: e.title, business: e.business?.name, unitsSold: 0, bookings: 0, revenueCredits: 0 });
+      ex.unitsSold += b.participants; ex.bookings += 1; ex.revenueCredits += b.totalCredits;
+
+      if (e.category) {
+        const c = (catMap[e.category.id] ||= { id: e.category.id, name: e.category.name, unitsSold: 0, revenueCredits: 0 });
+        c.unitsSold += b.participants; c.revenueCredits += b.totalCredits;
+      }
+      if (e.business) {
+        const bz = (bizMap[e.business.id] ||= { id: e.business.id, name: e.business.name, unitsSold: 0, revenueCredits: 0 });
+        bz.unitsSold += b.participants; bz.revenueCredits += b.totalCredits;
+      }
+    }
+
+    const sortByRev = (a: any, b: any) => b.revenueCredits - a.revenueCredits;
+
+    res.json({
+      totals: { units: totalUnits, revenueCredits: totalCredits, revenueUsd: creditsToUsd(totalCredits), orders: bookings.length },
+      topExperiences: Object.values(expMap).sort(sortByRev).slice(0, 25),
+      byCategory: Object.values(catMap).sort(sortByRev),
+      byBusiness: Object.values(bizMap).sort(sortByRev),
+    });
+  } catch (err) {
+    console.error("Sales error:", err);
+    res.status(500).json({ error: "Failed to fetch sales" });
+  }
+});
+
+// ─── AUDIT LOG ───────────────────────────────────────────
+router.get("/audit", authenticate, authorize("ADMIN", "SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { page = "1", limit = "30", category, search } = req.query as Record<string, string | undefined>;
+    const take = Math.min(Number(limit) || 30, 100);
+    const skip = ((Number(page) || 1) - 1) * take;
+
+    const where: any = {};
+    if (category) where.category = category;
+    if (search) {
+      where.OR = [
+        { summary: { contains: search, mode: "insensitive" } },
+        { actorEmail: { contains: search, mode: "insensitive" } },
+        { action: { contains: search, mode: "insensitive" } },
+      ];
+    }
+
+    const [logs, total] = await Promise.all([
+      prisma.auditLog.findMany({ where, orderBy: { createdAt: "desc" }, skip, take }),
+      prisma.auditLog.count({ where }),
+    ]);
+
+    res.json({
+      logs,
+      pagination: { page: Number(page) || 1, limit: take, total, totalPages: Math.ceil(total / take) },
+    });
+  } catch (err) {
+    console.error("Audit fetch error:", err);
+    res.status(500).json({ error: "Failed to fetch audit log" });
   }
 });
 
@@ -87,6 +259,17 @@ router.put("/users/:id/role", authenticate, authorize("SUPER_ADMIN"), async (req
       select: { id: true, email: true, firstName: true, lastName: true, role: true },
     });
 
+    await logAudit({
+      actor: actorFromReq(req),
+      category: "USER",
+      action: "USER_ROLE_CHANGE",
+      summary: `Changed ${user.email}'s role to ${role}`,
+      targetType: "User",
+      targetId: user.id,
+      metadata: { role },
+      ip: ipFromReq(req),
+    });
+
     res.json(user);
   } catch {
     res.status(500).json({ error: "Failed to update role" });
@@ -101,6 +284,17 @@ router.put("/users/:id/status", authenticate, authorize("SUPER_ADMIN"), async (r
       data: { isActive },
       select: { id: true, email: true, isActive: true },
     });
+
+    await logAudit({
+      actor: actorFromReq(req),
+      category: "USER",
+      action: isActive ? "USER_ACTIVATE" : "USER_DEACTIVATE",
+      summary: `${isActive ? "Activated" : "Deactivated"} ${user.email}`,
+      targetType: "User",
+      targetId: user.id,
+      ip: ipFromReq(req),
+    });
+
     res.json(user);
   } catch {
     res.status(500).json({ error: "Failed to update user status" });
@@ -171,6 +365,17 @@ router.post("/users", authenticate, authorize("SUPER_ADMIN"), async (req: AuthRe
       },
     });
 
+    await logAudit({
+      actor: actorFromReq(req),
+      category: "USER",
+      action: "USER_CREATE",
+      summary: `Created user ${user.email} (${user.role})`,
+      targetType: "User",
+      targetId: user.id,
+      amount: user.creditBalance || undefined,
+      ip: ipFromReq(req),
+    });
+
     res.status(201).json(user);
   } catch {
     res.status(500).json({ error: "Failed to create user" });
@@ -205,6 +410,17 @@ router.put("/users/:id", authenticate, authorize("SUPER_ADMIN"), async (req: Aut
       },
     });
 
+    await logAudit({
+      actor: actorFromReq(req),
+      category: "USER",
+      action: "USER_UPDATE",
+      summary: `Edited user ${user.email}`,
+      targetType: "User",
+      targetId: user.id,
+      metadata: { fields: Object.keys(data) },
+      ip: ipFromReq(req),
+    });
+
     res.json(user);
   } catch {
     res.status(500).json({ error: "Failed to update user" });
@@ -216,16 +432,31 @@ router.delete("/users/:id", authenticate, authorize("SUPER_ADMIN"), async (req: 
   try {
     const hard = req.query.hard === "true";
 
+    const target = await prisma.user.findUnique({
+      where: { id: req.params.id as string },
+      select: { id: true, email: true },
+    });
+
     if (hard) {
       await prisma.user.delete({ where: { id: req.params.id as string } });
-      res.json({ message: "User permanently deleted" });
     } else {
       await prisma.user.update({
         where: { id: req.params.id as string },
         data: { isActive: false },
       });
-      res.json({ message: "User deactivated" });
     }
+
+    await logAudit({
+      actor: actorFromReq(req),
+      category: "USER",
+      action: hard ? "USER_DELETE" : "USER_DEACTIVATE",
+      summary: `${hard ? "Permanently deleted" : "Deactivated"} user ${target?.email ?? req.params.id}`,
+      targetType: "User",
+      targetId: req.params.id as string,
+      ip: ipFromReq(req),
+    });
+
+    res.json({ message: hard ? "User permanently deleted" : "User deactivated" });
   } catch {
     res.status(500).json({ error: "Failed to delete user" });
   }
@@ -254,6 +485,17 @@ router.put("/businesses/:id/verify", authenticate, authorize("ADMIN", "SUPER_ADM
       where: { id: req.params.id as string },
       data: { isVerified: true },
     });
+
+    await logAudit({
+      actor: actorFromReq(req),
+      category: "BUSINESS",
+      action: "BUSINESS_VERIFY",
+      summary: `Verified business "${business.name}"`,
+      targetType: "Business",
+      targetId: business.id,
+      ip: ipFromReq(req),
+    });
+
     res.json(business);
   } catch {
     res.status(500).json({ error: "Failed to verify business" });
@@ -312,6 +554,16 @@ router.post("/businesses", authenticate, authorize("ADMIN", "SUPER_ADMIN"), asyn
       },
     });
 
+    await logAudit({
+      actor: actorFromReq(req),
+      category: "BUSINESS",
+      action: "BUSINESS_CREATE",
+      summary: `Created business "${business.name}" for ${owner.email}`,
+      targetType: "Business",
+      targetId: business.id,
+      ip: ipFromReq(req),
+    });
+
     res.status(201).json(business);
   } catch {
     res.status(500).json({ error: "Failed to create business" });
@@ -343,6 +595,17 @@ router.put("/businesses/:id", authenticate, authorize("ADMIN", "SUPER_ADMIN"), a
       },
     });
 
+    await logAudit({
+      actor: actorFromReq(req),
+      category: "BUSINESS",
+      action: "BUSINESS_UPDATE",
+      summary: `Edited business "${business.name}"`,
+      targetType: "Business",
+      targetId: business.id,
+      metadata: { fields: Object.keys(data) },
+      ip: ipFromReq(req),
+    });
+
     res.json(business);
   } catch {
     res.status(500).json({ error: "Failed to update business" });
@@ -352,7 +615,19 @@ router.put("/businesses/:id", authenticate, authorize("ADMIN", "SUPER_ADMIN"), a
 // Delete a business (SUPER_ADMIN only)
 router.delete("/businesses/:id", authenticate, authorize("SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
   try {
+    const biz = await prisma.business.findUnique({ where: { id: req.params.id as string }, select: { name: true } });
     await prisma.business.delete({ where: { id: req.params.id as string } });
+
+    await logAudit({
+      actor: actorFromReq(req),
+      category: "BUSINESS",
+      action: "BUSINESS_DELETE",
+      summary: `Deleted business "${biz?.name ?? req.params.id}"`,
+      targetType: "Business",
+      targetId: req.params.id as string,
+      ip: ipFromReq(req),
+    });
+
     res.json({ message: "Business deleted" });
   } catch {
     res.status(500).json({ error: "Failed to delete business" });
@@ -405,6 +680,16 @@ router.put("/registrations/:id/approve", authenticate, authorize("SUPER_ADMIN"),
       });
     }
 
+    await logAudit({
+      actor: actorFromReq(req),
+      category: "REGISTRATION",
+      action: "REGISTRATION_APPROVE",
+      summary: `Approved business registration "${reg.businessName}" (${reg.ownerEmail})`,
+      targetType: "BusinessRegistration",
+      targetId: reg.id,
+      ip: ipFromReq(req),
+    });
+
     res.json({ message: "Registration approved" });
   } catch {
     res.status(500).json({ error: "Failed to approve registration" });
@@ -414,10 +699,22 @@ router.put("/registrations/:id/approve", authenticate, authorize("SUPER_ADMIN"),
 router.put("/registrations/:id/reject", authenticate, authorize("SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
   try {
     const { reviewNote } = req.body;
-    await prisma.businessRegistration.update({
+    const reg = await prisma.businessRegistration.update({
       where: { id: req.params.id as string },
       data: { status: "REJECTED", reviewedBy: req.authUser!.userId, reviewNote },
     });
+
+    await logAudit({
+      actor: actorFromReq(req),
+      category: "REGISTRATION",
+      action: "REGISTRATION_REJECT",
+      summary: `Rejected business registration "${reg.businessName}"`,
+      targetType: "BusinessRegistration",
+      targetId: reg.id,
+      metadata: { reviewNote: reviewNote || null },
+      ip: ipFromReq(req),
+    });
+
     res.json({ message: "Registration rejected" });
   } catch {
     res.status(500).json({ error: "Failed to reject registration" });
@@ -471,6 +768,8 @@ router.put("/experiences/:id", authenticate, authorize("ADMIN", "SUPER_ADMIN"), 
     if (whatToBring !== undefined) data.whatToBring = whatToBring;
     if (priceCredits !== undefined) data.priceCredits = priceCredits;
     if (priceCurrency !== undefined) data.priceCurrency = priceCurrency;
+    if (req.body.costCredits !== undefined) data.costCredits = req.body.costCredits;
+    if (req.body.costCurrency !== undefined) data.costCurrency = req.body.costCurrency;
     if (duration !== undefined) data.duration = duration;
     if (maxParticipants !== undefined) data.maxParticipants = maxParticipants;
     if (minParticipants !== undefined) data.minParticipants = minParticipants;
@@ -488,6 +787,17 @@ router.put("/experiences/:id", authenticate, authorize("ADMIN", "SUPER_ADMIN"), 
       where: { id: req.params.id as string },
       data,
       include: { category: { select: { id: true, name: true } }, business: { select: { id: true, name: true } } },
+    });
+
+    await logAudit({
+      actor: actorFromReq(req),
+      category: "EXPERIENCE",
+      action: "EXPERIENCE_UPDATE",
+      summary: `Edited experience "${experience.title}"`,
+      targetType: "Experience",
+      targetId: experience.id,
+      metadata: { fields: Object.keys(data) },
+      ip: ipFromReq(req),
     });
 
     res.json(experience);

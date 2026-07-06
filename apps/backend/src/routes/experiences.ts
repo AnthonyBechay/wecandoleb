@@ -122,7 +122,7 @@ router.post("/", authenticate, authorize("BUSINESS_OWNER", "ADMIN", "SUPER_ADMIN
   try {
     const {
       title, shortDescription, description, highlights, includes, whatToBring,
-      priceCredits, priceCurrency, duration, maxParticipants, minParticipants,
+      priceCredits, priceCurrency, costCredits, costCurrency, duration, maxParticipants, minParticipants,
       difficulty, minAge, address, city, region, latitude, longitude,
       coverImage, categoryId, businessId,
     } = req.body;
@@ -143,7 +143,9 @@ router.post("/", authenticate, authorize("BUSINESS_OWNER", "ADMIN", "SUPER_ADMIN
       data: {
         title, slug: `${slug}-${Date.now()}`, shortDescription, description,
         highlights: highlights || [], includes: includes || [], whatToBring: whatToBring || [],
-        priceCredits, priceCurrency, duration, maxParticipants, minParticipants: minParticipants || 1,
+        priceCredits, priceCurrency,
+        costCredits: costCredits ?? 0, costCurrency: costCurrency ?? 0,
+        duration, maxParticipants, minParticipants: minParticipants || 1,
         difficulty: difficulty || "EASY", minAge, address, city, region,
         latitude, longitude, coverImage, categoryId, businessId,
       },
@@ -173,9 +175,25 @@ router.put("/:id", authenticate, authorize("BUSINESS_OWNER", "ADMIN", "SUPER_ADM
       return;
     }
 
+    // Whitelist updatable fields (never trust req.body directly — a raw
+    // spread would let an owner change businessId, slug, ratings, etc.).
+    const allowed = [
+      "title", "shortDescription", "description", "highlights", "includes", "whatToBring",
+      "priceCredits", "priceCurrency", "costCredits", "costCurrency", "duration",
+      "maxParticipants", "minParticipants", "difficulty", "minAge", "address", "city",
+      "region", "latitude", "longitude", "coverImage", "categoryId", "status",
+    ];
+    // Only ADMIN / SUPER_ADMIN may toggle featured.
+    if (["ADMIN", "SUPER_ADMIN"].includes(req.authUser!.role)) allowed.push("featured");
+
+    const data: any = {};
+    for (const key of allowed) {
+      if (req.body[key] !== undefined) data[key] = req.body[key];
+    }
+
     const updated = await prisma.experience.update({
       where: { id: req.params.id as string },
-      data: req.body,
+      data,
     });
 
     res.json(updated);

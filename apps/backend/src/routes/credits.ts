@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import { prisma } from "../lib/prisma";
 import { authenticate, authorize, AuthRequest } from "../middleware/auth";
+import { logAudit, actorFromReq, ipFromReq } from "../lib/audit";
 
 const router = Router();
 
@@ -84,6 +85,18 @@ router.post("/purchase", authenticate, async (req: AuthRequest, res: Response) =
       }),
     ]);
 
+    await logAudit({
+      actor: actorFromReq(req),
+      category: "CREDIT",
+      action: "CREDIT_PURCHASE",
+      summary: `Purchased ${pkg.name} — ${(totalCredits / 100).toFixed(0)} credits ($${pkg.priceUsd})`,
+      targetType: "CreditPackage",
+      targetId: pkg.id,
+      amount: totalCredits,
+      metadata: { priceUsd: pkg.priceUsd, packageName: pkg.name },
+      ip: ipFromReq(req),
+    });
+
     res.json({ balance: user.creditBalance, creditsAdded: totalCredits });
   } catch {
     res.status(500).json({ error: "Failed to purchase credits" });
@@ -93,7 +106,28 @@ router.post("/purchase", authenticate, async (req: AuthRequest, res: Response) =
 // Admin: adjust credits
 router.post("/adjust", authenticate, authorize("ADMIN", "SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
   try {
-    const { userId, amount, description } = req.body;
+    const { userId, description } = req.body;
+    const amount = Number(req.body.amount);
+
+    if (!userId) {
+      res.status(400).json({ error: "userId is required" });
+      return;
+    }
+    if (!Number.isInteger(amount) || amount === 0) {
+      res.status(400).json({ error: "amount must be a non-zero whole number of credits" });
+      return;
+    }
+
+    const target = await prisma.user.findUnique({ where: { id: userId } });
+    if (!target) {
+      res.status(404).json({ error: "User not found" });
+      return;
+    }
+    // Don't let an adjustment drive a balance negative.
+    if (target.creditBalance + amount < 0) {
+      res.status(400).json({ error: "Adjustment would make the balance negative" });
+      return;
+    }
 
     const [user] = await prisma.$transaction([
       prisma.user.update({
@@ -109,6 +143,18 @@ router.post("/adjust", authenticate, authorize("ADMIN", "SUPER_ADMIN"), async (r
         },
       }),
     ]);
+
+    await logAudit({
+      actor: actorFromReq(req),
+      category: "CREDIT",
+      action: "CREDIT_ADJUST",
+      summary: `Adjusted ${target.email}'s balance by ${amount > 0 ? "+" : ""}${(amount / 100).toFixed(0)} credits`,
+      targetType: "User",
+      targetId: userId,
+      amount,
+      metadata: { reason: description || null },
+      ip: ipFromReq(req),
+    });
 
     res.json({ balance: user.creditBalance });
   } catch {

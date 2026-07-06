@@ -6,6 +6,9 @@ const prisma = new PrismaClient();
 async function main() {
   console.log("Seeding database...");
 
+  // All seeded/test accounts share the same password for easy demo access.
+  const passwordHash = await bcrypt.hash("admin123!", 12);
+
   // ── Categories ─────────────────────────────────
   const categories = await Promise.all([
     prisma.category.upsert({
@@ -43,13 +46,12 @@ async function main() {
   const [wineCat, workshopCat, culturalCat, outdoorCat, culinaryCat, wellnessCat] = categories;
 
   // ── Super Admin ────────────────────────────────
-  const adminHash = await bcrypt.hash("admin123!", 12);
   const admin = await prisma.user.upsert({
     where: { email: "admin@wecandoleb.com" },
     update: {},
     create: {
       email: "admin@wecandoleb.com",
-      passwordHash: adminHash,
+      passwordHash,
       firstName: "Admin",
       lastName: "WeCanDoLeb",
       role: "SUPER_ADMIN",
@@ -59,13 +61,12 @@ async function main() {
   });
 
   // ── Business Owner ─────────────────────────────
-  const ownerHash = await bcrypt.hash("owner123!", 12);
   const owner = await prisma.user.upsert({
     where: { email: "owner@wecandoleb.com" },
     update: {},
     create: {
       email: "owner@wecandoleb.com",
-      passwordHash: ownerHash,
+      passwordHash,
       firstName: "Karim",
       lastName: "Haddad",
       role: "BUSINESS_OWNER",
@@ -75,13 +76,12 @@ async function main() {
   });
 
   // ── Admin ───────────────────────────────────────
-  const adminUserHash = await bcrypt.hash("admin123!", 12);
   await prisma.user.upsert({
     where: { email: "moderator@wecandoleb.com" },
     update: {},
     create: {
       email: "moderator@wecandoleb.com",
-      passwordHash: adminUserHash,
+      passwordHash,
       firstName: "Nadia",
       lastName: "Saab",
       role: "ADMIN",
@@ -91,13 +91,12 @@ async function main() {
   });
 
   // ── Demo User ──────────────────────────────────
-  const userHash = await bcrypt.hash("user123!", 12);
   const demoUser = await prisma.user.upsert({
     where: { email: "user@wecandoleb.com" },
     update: {},
     create: {
       email: "user@wecandoleb.com",
-      passwordHash: userHash,
+      passwordHash,
       firstName: "Lea",
       lastName: "Khalil",
       role: "USER",
@@ -131,7 +130,7 @@ async function main() {
       name: "Tripoli Heritage Crafts",
       description: "Artisan workshops preserving the soap-making, metalwork, and textile traditions of Tripoli's historic souks.",
       phone: "+961 6 430 000",
-      email: "hello@tripolicroats.lb",
+      email: "hello@tripolicrafts.lb",
       city: "Tripoli",
       region: "North Lebanon",
       isVerified: true,
@@ -147,7 +146,7 @@ async function main() {
       name: "Bekaa Valley Experiences",
       description: "Guided tours through Lebanon's premier wine region, including Chateau Kefraya, Ksara, and Massaya.",
       phone: "+961 8 510 000",
-      email: "tours@bekaavallev.lb",
+      email: "tours@bekaavalley.lb",
       city: "Zahlé",
       region: "Bekaa Valley",
       isVerified: true,
@@ -460,10 +459,14 @@ Whether you're a beginner or experienced practitioner, this retreat is designed 
 
   for (const exp of experiences) {
     const { id, ...data } = exp;
+    // Give each experience a plausible cost (~55% of the sale price) so the
+    // provider dashboard shows real margins out of the box.
+    const costCredits = Math.round(data.priceCredits * 0.55);
+    const costCurrency = Math.round(data.priceCurrency * 0.55 * 100) / 100;
     await prisma.experience.upsert({
       where: { id },
-      update: {},
-      create: { id, ...data, status: "ACTIVE" },
+      update: { costCredits, costCurrency },
+      create: { id, ...data, costCredits, costCurrency, status: "ACTIVE" },
     });
 
     // Create sessions for each experience (next 4 weekends)
@@ -506,26 +509,20 @@ Whether you're a beginner or experienced practitioner, this retreat is designed 
   }
 
   // ── Extra Demo Users for Reviews ─────────────
-  const reviewerHashes = await Promise.all([
-    bcrypt.hash("reviewer1!", 12),
-    bcrypt.hash("reviewer2!", 12),
-    bcrypt.hash("reviewer3!", 12),
-  ]);
-
   const reviewer1 = await prisma.user.upsert({
     where: { email: "maya@example.com" },
     update: {},
-    create: { email: "maya@example.com", passwordHash: reviewerHashes[0], firstName: "Maya", lastName: "Farah", role: "USER", emailVerified: true, creditBalance: 5000 },
+    create: { email: "maya@example.com", passwordHash, firstName: "Maya", lastName: "Farah", role: "USER", emailVerified: true, creditBalance: 5000 },
   });
   const reviewer2 = await prisma.user.upsert({
     where: { email: "sami@example.com" },
     update: {},
-    create: { email: "sami@example.com", passwordHash: reviewerHashes[1], firstName: "Sami", lastName: "Nassar", role: "USER", emailVerified: true, creditBalance: 5000 },
+    create: { email: "sami@example.com", passwordHash, firstName: "Sami", lastName: "Nassar", role: "USER", emailVerified: true, creditBalance: 5000 },
   });
   const reviewer3 = await prisma.user.upsert({
     where: { email: "rania@example.com" },
     update: {},
-    create: { email: "rania@example.com", passwordHash: reviewerHashes[2], firstName: "Rania", lastName: "Khoury", role: "USER", emailVerified: true, creditBalance: 5000 },
+    create: { email: "rania@example.com", passwordHash, firstName: "Rania", lastName: "Khoury", role: "USER", emailVerified: true, creditBalance: 5000 },
   });
 
   // ── Completed Bookings & Real Reviews ─────────
@@ -754,11 +751,12 @@ Whether you're a beginner or experienced practitioner, this retreat is designed 
   console.log("  - 3 credit packages");
   console.log("  - Real bookings & reviews for all experiences");
   console.log("");
-  console.log("Login credentials:");
-  console.log("  Super Admin: admin@wecandoleb.com / admin123!");
-  console.log("  Admin: moderator@wecandoleb.com / admin123!");
-  console.log("  Business Owner: owner@wecandoleb.com / owner123!");
-  console.log("  Demo User: user@wecandoleb.com / user123!");
+  console.log("Login credentials (all accounts use password: admin123!):");
+  console.log("  Super Admin:    admin@wecandoleb.com");
+  console.log("  Admin:          moderator@wecandoleb.com");
+  console.log("  Business Owner: owner@wecandoleb.com");
+  console.log("  Demo User:      user@wecandoleb.com");
+  console.log("  Reviewers:      maya@example.com, sami@example.com, rania@example.com");
 }
 
 main()

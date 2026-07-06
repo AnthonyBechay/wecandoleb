@@ -8,9 +8,10 @@ interface User {
   email: string;
   firstName: string;
   lastName: string;
+  phone?: string | null;
   role: string;
   creditBalance: number;
-  avatarUrl?: string;
+  avatarUrl?: string | null;
   createdAt?: string;
   businesses?: { id: string; name: string }[];
 }

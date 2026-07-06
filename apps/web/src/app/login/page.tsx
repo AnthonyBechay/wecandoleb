@@ -12,8 +12,8 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:10000";
 const DEMO_ACCOUNTS = [
   { label: "Super Admin", name: "Admin", email: "admin@wecandoleb.com", password: "admin123!", icon: ShieldCheck, color: "bg-wine-50 text-wine-700 hover:bg-wine-100" },
   { label: "Admin", name: "Nadia", email: "moderator@wecandoleb.com", password: "admin123!", icon: Shield, color: "bg-blue-50 text-blue-700 hover:bg-blue-100" },
-  { label: "Business Owner", name: "Karim", email: "owner@wecandoleb.com", password: "owner123!", icon: Building2, color: "bg-cedar-50 text-cedar-700 hover:bg-cedar-100" },
-  { label: "Customer", name: "Lea", email: "user@wecandoleb.com", password: "user123!", icon: User, color: "bg-sunset-50 text-sunset-700 hover:bg-sunset-100" },
+  { label: "Business Owner", name: "Karim", email: "owner@wecandoleb.com", password: "admin123!", icon: Building2, color: "bg-cedar-50 text-cedar-700 hover:bg-cedar-100" },
+  { label: "Customer", name: "Lea", email: "user@wecandoleb.com", password: "admin123!", icon: User, color: "bg-sunset-50 text-sunset-700 hover:bg-sunset-100" },
 ] as const;
 
 export default function LoginPage() {

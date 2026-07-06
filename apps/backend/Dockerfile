@@ -19,4 +19,5 @@ RUN cd apps/backend && npx tsc
 
 EXPOSE 10000
 
-CMD ["sh", "-c", "cd apps/backend && npx prisma db push && node dist/index.js"]
+# Fallback CMD (compose overrides this). Non-destructive: apply migrations then start.
+CMD ["sh", "-c", "cd apps/backend && npx prisma migrate deploy && node dist/index.js"]

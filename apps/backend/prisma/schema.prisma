@@ -179,6 +179,8 @@ model Experience {
   whatToBring      String[]         // what to bring
   priceCredits     Int              // price in credits (cents)
   priceCurrency    Float            // price in USD for display
+  costCredits      Int              @default(0) // provider's cost in credits (cents)
+  costCurrency     Float            @default(0)  // provider's cost in USD
   duration         Int              // duration in minutes
   maxParticipants  Int
   minParticipants  Int              @default(1)
@@ -454,6 +456,30 @@ model ProviderMeeting {
 
   @@index([businessId, startTime])
   @@map("provider_meetings")
+}
+
+// ─── AUDIT LOG ───────────────────────────────────────────
+// Immutable record of significant actions across the platform. No FK to the
+// user so entries survive account deletion (actor snapshot is stored inline).
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  actorEmail String?
+  actorRole  String?
+  category   String   // AUTH | CREDIT | GIFT | BOOKING | EXPERIENCE | BUSINESS | USER | REGISTRATION | ADMIN
+  action     String   // e.g. CREDIT_PURCHASE, GIFT_CLAIM, USER_ROLE_CHANGE
+  summary    String   // human-readable one-liner
+  targetType String?  // e.g. User, Business, Experience, Gift, Booking
+  targetId   String?
+  amount     Int?     // credits involved (cents), where relevant
+  metadata   Json?
+  ip         String?
+  createdAt  DateTime @default(now())
+
+  @@index([category, createdAt])
+  @@index([createdAt])
+  @@map("audit_logs")
 }
 
 // ─── SITE SETTINGS ───────────────────────────────────────

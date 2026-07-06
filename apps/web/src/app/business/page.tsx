@@ -18,6 +18,7 @@ import {
   Check,
   X,
   CalendarDays,
+  BarChart3,
 } from "lucide-react";
 import { api } from "@/lib/api";
 
@@ -70,6 +71,8 @@ interface Experience {
   whatToBring?: string[];
   priceCredits?: number;
   priceCurrency?: number;
+  costCredits?: number;
+  costCurrency?: number;
   duration?: number;
   maxParticipants?: number;
   minParticipants?: number;
@@ -98,6 +101,8 @@ const EMPTY_EXP_FORM = {
   whatToBring: "",
   priceCredits: "",
   priceCurrency: "",
+  costCredits: "",
+  costCurrency: "",
   duration: "",
   maxParticipants: "",
   minParticipants: "",
@@ -216,6 +221,8 @@ export default function BusinessPage() {
       whatToBring: (exp.whatToBring || []).join(", "),
       priceCredits: exp.priceCredits != null ? String(exp.priceCredits) : "",
       priceCurrency: exp.priceCurrency != null ? String(exp.priceCurrency) : "",
+      costCredits: exp.costCredits != null ? String(exp.costCredits) : "",
+      costCurrency: exp.costCurrency != null ? String(exp.costCurrency) : "",
       duration: exp.duration != null ? String(exp.duration) : "",
       maxParticipants: exp.maxParticipants != null ? String(exp.maxParticipants) : "",
       minParticipants: exp.minParticipants != null ? String(exp.minParticipants) : "",
@@ -246,6 +253,8 @@ export default function BusinessPage() {
       whatToBring: split(expForm.whatToBring),
       priceCredits: expForm.priceCredits ? Number(expForm.priceCredits) : undefined,
       priceCurrency: expForm.priceCurrency ? Number(expForm.priceCurrency) : undefined,
+      costCredits: expForm.costCredits !== "" ? Number(expForm.costCredits) : undefined,
+      costCurrency: expForm.costCurrency !== "" ? Number(expForm.costCurrency) : undefined,
       duration: expForm.duration ? Number(expForm.duration) : undefined,
       maxParticipants: expForm.maxParticipants ? Number(expForm.maxParticipants) : undefined,
       minParticipants: expForm.minParticipants ? Number(expForm.minParticipants) : undefined,
@@ -467,21 +476,63 @@ export default function BusinessPage() {
               placeholder="What to bring (comma-separated)"
             />
 
-            <div className="grid grid-cols-2 gap-4">
-              <input
-                type="number"
-                value={expForm.priceCredits}
-                onChange={(e) => setExpForm({ ...expForm, priceCredits: e.target.value })}
-                className={inputCls}
-                placeholder="Price (credits)"
-              />
-              <input
-                type="number"
-                value={expForm.priceCurrency}
-                onChange={(e) => setExpForm({ ...expForm, priceCurrency: e.target.value })}
-                className={inputCls}
-                placeholder="Price (currency)"
-              />
+            <div className="rounded-xl border border-gray-100 bg-gray-50 p-4 space-y-3">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Pricing & margin</p>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs text-gray-500 mb-1 block">Sale price (credits)</label>
+                  <input
+                    type="number"
+                    value={expForm.priceCredits}
+                    onChange={(e) => setExpForm({ ...expForm, priceCredits: e.target.value })}
+                    className={inputCls}
+                    placeholder="e.g. 4500"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 mb-1 block">Sale price (USD)</label>
+                  <input
+                    type="number"
+                    value={expForm.priceCurrency}
+                    onChange={(e) => setExpForm({ ...expForm, priceCurrency: e.target.value })}
+                    className={inputCls}
+                    placeholder="e.g. 45"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 mb-1 block">Your cost (credits)</label>
+                  <input
+                    type="number"
+                    value={expForm.costCredits}
+                    onChange={(e) => setExpForm({ ...expForm, costCredits: e.target.value })}
+                    className={inputCls}
+                    placeholder="e.g. 2000"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 mb-1 block">Your cost (USD)</label>
+                  <input
+                    type="number"
+                    value={expForm.costCurrency}
+                    onChange={(e) => setExpForm({ ...expForm, costCurrency: e.target.value })}
+                    className={inputCls}
+                    placeholder="e.g. 20"
+                  />
+                </div>
+              </div>
+              {(() => {
+                const price = Number(expForm.priceCredits) || 0;
+                const cost = Number(expForm.costCredits) || 0;
+                if (!price) return null;
+                const profit = price - cost;
+                const margin = price > 0 ? Math.round((profit / price) * 100) : 0;
+                return (
+                  <div className={`flex items-center justify-between rounded-lg px-3 py-2 text-sm ${profit >= 0 ? "bg-cedar-50 text-cedar-700" : "bg-red-50 text-red-700"}`}>
+                    <span className="font-medium">Profit per booking</span>
+                    <span className="font-bold">{profit} credits · {margin}% margin</span>
+                  </div>
+                );
+              })()}
             </div>
 
             <div className="grid grid-cols-3 gap-4">
@@ -867,6 +918,9 @@ export default function BusinessPage() {
           <h1 className="font-display text-3xl font-bold text-gray-900">My Businesses</h1>
           {(user.role === "BUSINESS_OWNER" || user.role === "ADMIN" || user.role === "SUPER_ADMIN") && (
             <div className="flex items-center gap-2">
+              <Link href="/business/stats" className="btn-secondary text-sm !py-2.5 inline-flex items-center">
+                <BarChart3 className="w-4 h-4 mr-1" /> Dashboard
+              </Link>
               <Link href="/schedule" className="btn-secondary text-sm !py-2.5 inline-flex items-center">
                 <CalendarDays className="w-4 h-4 mr-1" /> Schedule
               </Link>

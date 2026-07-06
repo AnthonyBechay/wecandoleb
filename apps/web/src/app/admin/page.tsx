@@ -20,16 +20,50 @@ import {
   FileText,
   Eye,
   UserPlus,
+  DollarSign,
+  TrendingUp,
+  Wallet,
+  ScrollText,
+  Gift,
+  Coins,
 } from "lucide-react";
 import { api } from "@/lib/api";
 
-type Tab = "stats" | "users" | "businesses" | "experiences" | "registrations";
+type Tab = "stats" | "sales" | "activity" | "users" | "businesses" | "experiences" | "registrations";
+
+const TAB_LABELS: Record<Tab, string> = {
+  stats: "Overview",
+  sales: "Sales",
+  activity: "Activity",
+  users: "Users",
+  businesses: "Businesses",
+  experiences: "Experiences",
+  registrations: "Registrations",
+};
+
+/* credits are in cents where 100 credits = $1 */
+const usd = (credits: number) => `$${(credits / 100).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 
 export default function AdminPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const [tab, setTab] = useState<Tab>("stats");
   const [stats, setStats] = useState<any>(null);
+  const [accounting, setAccounting] = useState<any>(null);
+
+  // Sales state
+  const [sales, setSales] = useState<any>(null);
+
+  // Activity / audit state
+  const [audit, setAudit] = useState<any[]>([]);
+  const [auditCategory, setAuditCategory] = useState("");
+  const [auditSearch, setAuditSearch] = useState("");
+
+  // Credit adjustment modal
+  const [adjustUser, setAdjustUser] = useState<any>(null);
+  const [adjustAmount, setAdjustAmount] = useState("");
+  const [adjustReason, setAdjustReason] = useState("");
+  const [adjusting, setAdjusting] = useState(false);
 
   // Users state
   const [users, setUsers] = useState<any[]>([]);
@@ -99,7 +133,28 @@ export default function AdminPage() {
   useEffect(() => {
     if (!user || !["ADMIN", "SUPER_ADMIN"].includes(user.role)) return;
     api.get<any>("/api/admin/stats").then(setStats).catch(() => {});
+    api.get<any>("/api/admin/accounting").then(setAccounting).catch(() => {});
   }, [user]);
+
+  // Sales tab
+  useEffect(() => {
+    if (tab === "sales") {
+      api.get<any>("/api/admin/sales").then(setSales).catch(() => {});
+    }
+  }, [tab]);
+
+  // Activity tab
+  useEffect(() => {
+    if (tab !== "activity") return;
+    const t = setTimeout(() => {
+      const params = new URLSearchParams();
+      if (auditCategory) params.set("category", auditCategory);
+      if (auditSearch) params.set("search", auditSearch);
+      const qs = params.toString();
+      api.get<{ logs: any[] }>(`/api/admin/audit${qs ? `?${qs}` : ""}`).then((d) => setAudit(d.logs)).catch(() => {});
+    }, 250);
+    return () => clearTimeout(t);
+  }, [tab, auditCategory, auditSearch]);
 
   useEffect(() => {
     if (tab === "users") {
@@ -248,6 +303,29 @@ export default function AdminPage() {
     }
   };
 
+  const handleAdjustCredits = async () => {
+    if (!adjustUser) return;
+    const amount = Math.round(parseFloat(adjustAmount) * 100); // credits → cents
+    if (!Number.isInteger(amount) || amount === 0) { alert("Enter a non-zero credit amount"); return; }
+    setAdjusting(true);
+    try {
+      const res = await api.post<{ balance: number }>("/api/credits/adjust", {
+        userId: adjustUser.id,
+        amount,
+        description: adjustReason || undefined,
+      });
+      setUsers((prev) => prev.map((u) => (u.id === adjustUser.id ? { ...u, creditBalance: res.balance } : u)));
+      setAdjustUser(null);
+      setAdjustAmount("");
+      setAdjustReason("");
+      api.get<any>("/api/admin/accounting").then(setAccounting).catch(() => {});
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setAdjusting(false);
+    }
+  };
+
   const handleToggleUserActive = async (u: any) => {
     try {
       await api.put(`/api/admin/users/${u.id}`, { isActive: !u.isActive });
@@ -378,6 +456,8 @@ export default function AdminPage() {
         "whatToBring",
         "priceCredits",
         "priceCurrency",
+        "costCredits",
+        "costCurrency",
         "duration",
         "maxParticipants",
         "minParticipants",
@@ -462,7 +542,7 @@ export default function AdminPage() {
   if (authLoading || !user || !["ADMIN", "SUPER_ADMIN"].includes(user.role)) return null;
 
   const isSuperAdmin = user.role === "SUPER_ADMIN";
-  const allTabs: Tab[] = ["stats", "users", "businesses", "experiences"];
+  const allTabs: Tab[] = ["stats", "sales", "activity", "users", "businesses", "experiences"];
   if (isSuperAdmin) allTabs.push("registrations");
 
   const inputClass =
@@ -482,48 +562,211 @@ export default function AdminPage() {
             <button
               key={t}
               onClick={() => setTab(t)}
-              className={`px-5 py-2.5 rounded-full text-sm font-medium transition capitalize ${
+              className={`px-5 py-2.5 rounded-full text-sm font-medium transition ${
                 tab === t
                   ? "bg-cedar-700 text-white"
                   : "bg-white text-gray-600 border border-gray-200"
               }`}
             >
-              {t}
+              {TAB_LABELS[t]}
             </button>
           ))}
         </div>
 
         {/* ══════════════════════ Stats Tab ══════════════════════ */}
-        {tab === "stats" && stats && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-            {[
-              { label: "Users", value: stats.users, icon: <Users className="w-5 h-5" /> },
-              { label: "Businesses", value: stats.businesses, icon: <Building2 className="w-5 h-5" /> },
-              { label: "Experiences", value: stats.experiences, icon: <Package className="w-5 h-5" /> },
-              { label: "Bookings", value: stats.bookings, icon: <Calendar className="w-5 h-5" /> },
-              {
-                label: "Credits Issued",
-                value: `${(stats.totalCreditsCirculating / 100).toFixed(0)}`,
-                icon: <Shield className="w-5 h-5" />,
-              },
-            ].map((s) => (
-              <div key={s.label} className="bg-white rounded-xl border border-gray-100 p-5">
-                <div className="flex items-center gap-2 text-gray-500 text-sm mb-2">
-                  {s.icon}
-                  {s.label}
+        {tab === "stats" && (
+          <div className="space-y-8">
+            {/* Platform counts */}
+            {stats && (
+              <div>
+                <h2 className="font-display text-lg font-semibold text-gray-900 mb-3">Platform</h2>
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                  {[
+                    { label: "Users", value: stats.users, icon: <Users className="w-5 h-5" /> },
+                    { label: "Businesses", value: stats.businesses, icon: <Building2 className="w-5 h-5" /> },
+                    { label: "Experiences", value: stats.experiences, icon: <Package className="w-5 h-5" /> },
+                    { label: "Bookings", value: stats.bookings, icon: <Calendar className="w-5 h-5" /> },
+                    { label: "Credits Issued", value: `${(stats.totalCreditsCirculating / 100).toFixed(0)}`, icon: <Coins className="w-5 h-5" /> },
+                    ...(stats.pendingRegistrations !== undefined
+                      ? [{ label: "Pending Regs", value: stats.pendingRegistrations, icon: <FileText className="w-5 h-5" /> }]
+                      : []),
+                  ].map((s) => (
+                    <div key={s.label} className="bg-white rounded-xl border border-gray-100 p-5">
+                      <div className="flex items-center gap-2 text-gray-500 text-sm mb-2">{s.icon}{s.label}</div>
+                      <p className="text-2xl font-bold text-gray-900">{s.value}</p>
+                    </div>
+                  ))}
                 </div>
-                <p className="text-2xl font-bold text-gray-900">{s.value}</p>
-              </div>
-            ))}
-            {stats.pendingRegistrations !== undefined && (
-              <div className="bg-white rounded-xl border border-gray-100 p-5">
-                <div className="flex items-center gap-2 text-gray-500 text-sm mb-2">
-                  <FileText className="w-5 h-5" />
-                  Pending Registrations
-                </div>
-                <p className="text-2xl font-bold text-gray-900">{stats.pendingRegistrations}</p>
               </div>
             )}
+
+            {/* Accounting */}
+            {accounting && (
+              <div>
+                <h2 className="font-display text-lg font-semibold text-gray-900 mb-3">Accounting</h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                  <AcctCard tone="cedar" icon={<DollarSign className="w-5 h-5" />} label="Gross revenue" primary={usd(accounting.grossRevenue.credits)} secondary={`${accounting.grossRevenue.transactions} purchases`} />
+                  <AcctCard tone="blue" icon={<TrendingUp className="w-5 h-5" />} label="Redeemed on bookings" primary={usd(accounting.redeemedOnBookings.credits)} secondary={`${(accounting.bookingRevenue.credits / 100).toFixed(0)} cr realized`} />
+                  <AcctCard tone="sunset" icon={<Gift className="w-5 h-5" />} label="Gifted out" primary={usd(accounting.giftedOut.credits)} secondary={`${usd(accounting.giftsClaimed.credits)} claimed`} />
+                  <AcctCard tone="wine" icon={<Wallet className="w-5 h-5" />} label="Outstanding liability" primary={usd(accounting.outstandingLiability.credits)} secondary="unspent credits" />
+                </div>
+                <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+                  <div className="px-5 py-3 border-b border-gray-100 text-sm font-semibold text-gray-700">Credit flow by type</div>
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 text-gray-500">
+                      <tr>
+                        <th className="text-left px-5 py-2.5 font-medium">Type</th>
+                        <th className="text-right px-5 py-2.5 font-medium">Transactions</th>
+                        <th className="text-right px-5 py-2.5 font-medium">Net credits</th>
+                        <th className="text-right px-5 py-2.5 font-medium">Net USD</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {accounting.transactionFlow.map((t: any) => (
+                        <tr key={t.type}>
+                          <td className="px-5 py-2.5 capitalize">{t.type.toLowerCase().replace(/_/g, " ")}</td>
+                          <td className="px-5 py-2.5 text-right text-gray-600">{t.count}</td>
+                          <td className={`px-5 py-2.5 text-right font-medium ${t.credits >= 0 ? "text-cedar-700" : "text-red-600"}`}>{t.credits >= 0 ? "+" : ""}{t.credits.toLocaleString()}</td>
+                          <td className="px-5 py-2.5 text-right text-gray-500">{usd(t.credits)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ══════════════════════ Sales Tab ══════════════════════ */}
+        {tab === "sales" && (
+          <div className="space-y-6">
+            {!sales ? (
+              <div className="bg-white rounded-xl border border-gray-100 p-10 text-center text-gray-400">Loading sales…</div>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                  <AcctCard tone="cedar" icon={<DollarSign className="w-5 h-5" />} label="Total revenue" primary={usd(sales.totals.revenueCredits)} secondary={`${sales.totals.orders} orders`} />
+                  <AcctCard tone="blue" icon={<Users className="w-5 h-5" />} label="Units sold" primary={String(sales.totals.units)} secondary="guest tickets" />
+                  <AcctCard tone="sunset" icon={<Package className="w-5 h-5" />} label="Experiences sold" primary={String(sales.topExperiences.length)} secondary="with ≥1 booking" />
+                  <AcctCard tone="wine" icon={<Building2 className="w-5 h-5" />} label="Active sellers" primary={String(sales.byBusiness.length)} secondary="businesses" />
+                </div>
+
+                <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+                  <div className="px-5 py-3 border-b border-gray-100 text-sm font-semibold text-gray-700">Top experiences by revenue</div>
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 text-gray-500">
+                      <tr>
+                        <th className="text-left px-5 py-2.5 font-medium">Experience</th>
+                        <th className="text-left px-5 py-2.5 font-medium">Business</th>
+                        <th className="text-right px-5 py-2.5 font-medium">Units</th>
+                        <th className="text-right px-5 py-2.5 font-medium">Orders</th>
+                        <th className="text-right px-5 py-2.5 font-medium">Revenue</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {sales.topExperiences.map((e: any) => (
+                        <tr key={e.id}>
+                          <td className="px-5 py-2.5 font-medium text-gray-900">{e.title}</td>
+                          <td className="px-5 py-2.5 text-gray-500">{e.business || "—"}</td>
+                          <td className="px-5 py-2.5 text-right font-semibold">{e.unitsSold}</td>
+                          <td className="px-5 py-2.5 text-right text-gray-600">{e.bookings}</td>
+                          <td className="px-5 py-2.5 text-right text-gray-900">{usd(e.revenueCredits)}</td>
+                        </tr>
+                      ))}
+                      {sales.topExperiences.length === 0 && (
+                        <tr><td colSpan={5} className="px-5 py-8 text-center text-gray-400">No sales yet.</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+                    <div className="px-5 py-3 border-b border-gray-100 text-sm font-semibold text-gray-700">By category</div>
+                    <div className="divide-y divide-gray-50">
+                      {sales.byCategory.map((c: any) => (
+                        <div key={c.id} className="flex items-center justify-between px-5 py-2.5 text-sm">
+                          <span className="text-gray-700">{c.name}</span>
+                          <span className="text-gray-500">{c.unitsSold} units · <span className="font-semibold text-gray-900">{usd(c.revenueCredits)}</span></span>
+                        </div>
+                      ))}
+                      {sales.byCategory.length === 0 && <div className="px-5 py-6 text-center text-gray-400 text-sm">No data</div>}
+                    </div>
+                  </div>
+                  <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+                    <div className="px-5 py-3 border-b border-gray-100 text-sm font-semibold text-gray-700">By business</div>
+                    <div className="divide-y divide-gray-50">
+                      {sales.byBusiness.map((b: any) => (
+                        <div key={b.id} className="flex items-center justify-between px-5 py-2.5 text-sm">
+                          <span className="text-gray-700">{b.name}</span>
+                          <span className="text-gray-500">{b.unitsSold} units · <span className="font-semibold text-gray-900">{usd(b.revenueCredits)}</span></span>
+                        </div>
+                      ))}
+                      {sales.byBusiness.length === 0 && <div className="px-5 py-6 text-center text-gray-400 text-sm">No data</div>}
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* ══════════════════════ Activity Tab ══════════════════════ */}
+        {tab === "activity" && (
+          <div>
+            <div className="flex flex-wrap items-center gap-3 mb-4">
+              <div className="relative flex-1 min-w-[200px] max-w-md">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <input
+                  type="text"
+                  value={auditSearch}
+                  onChange={(e) => setAuditSearch(e.target.value)}
+                  placeholder="Search activity…"
+                  className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-cedar-500"
+                />
+              </div>
+              <select
+                value={auditCategory}
+                onChange={(e) => setAuditCategory(e.target.value)}
+                className="border border-gray-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-cedar-500 bg-white text-sm"
+              >
+                <option value="">All categories</option>
+                {["AUTH", "CREDIT", "GIFT", "BOOKING", "EXPERIENCE", "BUSINESS", "USER", "REGISTRATION"].map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 text-gray-500">
+                  <tr>
+                    <th className="text-left px-5 py-3 font-medium">When</th>
+                    <th className="text-left px-5 py-3 font-medium">Category</th>
+                    <th className="text-left px-5 py-3 font-medium">Actor</th>
+                    <th className="text-left px-5 py-3 font-medium">Action</th>
+                    <th className="text-right px-5 py-3 font-medium">Credits</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {audit.map((log) => (
+                    <tr key={log.id}>
+                      <td className="px-5 py-3 text-gray-400 whitespace-nowrap">{new Date(log.createdAt).toLocaleString()}</td>
+                      <td className="px-5 py-3">
+                        <span className="text-xs font-medium bg-gray-100 text-gray-600 px-2 py-0.5 rounded-lg">{log.category}</span>
+                      </td>
+                      <td className="px-5 py-3 text-gray-500">{log.actorEmail || "system"}</td>
+                      <td className="px-5 py-3 text-gray-800">{log.summary}</td>
+                      <td className={`px-5 py-3 text-right font-medium ${log.amount == null ? "text-gray-300" : log.amount >= 0 ? "text-cedar-700" : "text-red-600"}`}>
+                        {log.amount == null ? "—" : `${log.amount >= 0 ? "+" : ""}${log.amount.toLocaleString()}`}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {audit.length === 0 && <div className="p-10 text-center text-gray-400">No activity recorded yet.</div>}
+            </div>
           </div>
         )}
 
@@ -781,6 +1024,13 @@ export default function AdminPage() {
                                     title="Edit"
                                   >
                                     <Edit className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    onClick={() => { setAdjustUser(u); setAdjustAmount(""); setAdjustReason(""); }}
+                                    className="p-1.5 rounded-lg bg-gray-100 text-gray-500 hover:bg-cedar-100 hover:text-cedar-700 transition"
+                                    title="Adjust credits"
+                                  >
+                                    <Coins className="w-4 h-4" />
                                   </button>
                                   <button
                                     onClick={() => handleToggleUserActive(u)}
@@ -1441,6 +1691,29 @@ export default function AdminPage() {
                           />
                         </div>
                         <div>
+                          <label className={labelClass}>Cost (Credits)</label>
+                          <input
+                            type="number"
+                            value={editingExp.costCredits ?? ""}
+                            onChange={(e) =>
+                              handleExpFieldChange("costCredits", parseInt(e.target.value) || 0)
+                            }
+                            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-cedar-500"
+                          />
+                        </div>
+                        <div>
+                          <label className={labelClass}>Cost (Currency)</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={editingExp.costCurrency ?? ""}
+                            onChange={(e) =>
+                              handleExpFieldChange("costCurrency", parseFloat(e.target.value) || 0)
+                            }
+                            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-cedar-500"
+                          />
+                        </div>
+                        <div>
                           <label className={labelClass}>Duration (minutes)</label>
                           <input
                             type="number"
@@ -1699,7 +1972,61 @@ export default function AdminPage() {
             )}
           </div>
         )}
+
+        {/* ══════════════════════ Credit Adjustment Modal ══════════════════════ */}
+        {adjustUser && (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl border border-gray-200 p-6 w-full max-w-md shadow-xl">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="font-display text-lg font-bold text-gray-900">Adjust credits</h2>
+                <button onClick={() => setAdjustUser(null)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
+              </div>
+              <p className="text-sm text-gray-500 mb-4">
+                {adjustUser.firstName} {adjustUser.lastName} · current balance{" "}
+                <span className="font-semibold text-gray-800">{(adjustUser.creditBalance / 100).toFixed(0)} credits</span>
+              </p>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Amount (credits — use a minus sign to deduct)</label>
+              <input
+                type="number"
+                value={adjustAmount}
+                onChange={(e) => setAdjustAmount(e.target.value)}
+                placeholder="e.g. 50 or -20"
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-cedar-500 mb-3"
+              />
+              <label className="block text-xs font-medium text-gray-500 mb-1">Reason (optional)</label>
+              <input
+                type="text"
+                value={adjustReason}
+                onChange={(e) => setAdjustReason(e.target.value)}
+                placeholder="e.g. goodwill credit"
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-cedar-500"
+              />
+              <div className="flex justify-end gap-2 mt-5 pt-4 border-t border-gray-200">
+                <button onClick={() => setAdjustUser(null)} className="btn-secondary text-sm !py-2 !px-4">Cancel</button>
+                <button onClick={handleAdjustCredits} disabled={adjusting || !adjustAmount} className="btn-primary text-sm !py-2 !px-4 flex items-center gap-1 disabled:opacity-50">
+                  <Check className="w-4 h-4" /> {adjusting ? "Applying…" : "Apply"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
+    </div>
+  );
+}
+
+function AcctCard({ icon, tone, label, primary, secondary }: { icon: React.ReactNode; tone: "cedar" | "sunset" | "blue" | "wine"; label: string; primary: string; secondary: string }) {
+  const tones: Record<string, string> = {
+    cedar: "bg-cedar-50 text-cedar-700",
+    sunset: "bg-sunset-50 text-sunset-600",
+    blue: "bg-blue-50 text-blue-600",
+    wine: "bg-wine-50 text-wine-600",
+  };
+  return (
+    <div className="bg-white rounded-xl border border-gray-100 p-5">
+      <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-3 ${tones[tone]}`}>{icon}</div>
+      <p className="text-2xl font-bold text-gray-900">{primary}</p>
+      <p className="text-xs text-gray-500 mt-0.5">{label} · {secondary}</p>
     </div>
   );
 }

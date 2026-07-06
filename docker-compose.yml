@@ -32,7 +32,10 @@ services:
       timeout: 10s
       retries: 10
       start_period: 120s
-    command: ["sh", "-c", "cd apps/backend && npx prisma db push --force-reset && npx tsx prisma/seed.ts && node dist/index.js"]
+    # Apply pending migrations (non-destructive, versioned) then start.
+    # NOTE: no --force-reset and no auto-seed — production data is preserved
+    # across deploys. Seeding is a deliberate one-time step (see README).
+    command: ["sh", "-c", "cd apps/backend && npx prisma migrate deploy && node dist/index.js"]
 
   web:
     build:
