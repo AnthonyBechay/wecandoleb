@@ -7,11 +7,11 @@ export default function Footer() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-10">
           {/* Brand */}
           <div className="md:col-span-1">
-            <div className="flex items-center gap-2 mb-4">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-cedar-500 to-cedar-700 flex items-center justify-center">
-                <span className="text-white font-bold text-sm">W</span>
+            <div className="flex items-center gap-2.5 mb-4">
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-cedar-400 to-cedar-700 flex items-center justify-center">
+                <span className="text-white font-display font-bold text-lg leading-none">M</span>
               </div>
-              <span className="font-display text-xl font-bold text-white">WeCanDoLeb</span>
+              <span className="font-display text-xl font-bold text-white">MakeYourOwn</span>
             </div>
             <p className="text-sm text-gray-400 leading-relaxed">
               Discover and gift unique experiences across Lebanon. From wine tasting in the Bekaa Valley to artisan workshops in the mountains.
@@ -53,7 +53,7 @@ export default function Footer() {
         </div>
 
         <div className="border-t border-gray-800 mt-12 pt-8 flex flex-col md:flex-row justify-between items-center gap-4">
-          <p className="text-sm text-gray-500">&copy; {new Date().getFullYear()} WeCanDoLeb. All rights reserved.</p>
+          <p className="text-sm text-gray-500">&copy; {new Date().getFullYear()} MakeYourOwn. All rights reserved.</p>
           <p className="text-sm text-gray-500">Made with love in Lebanon</p>
         </div>
       </div>

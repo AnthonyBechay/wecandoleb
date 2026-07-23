@@ -273,7 +273,7 @@ export default function SchedulePage() {
               <CalendarDays className="w-7 h-7 text-cedar-600" /> My Schedule
             </h1>
             <p className="text-gray-600 mt-1 text-sm">
-              All your meetings in one place — booked through WeCanDoLeb or added yourself.
+              All your meetings in one place — booked through MakeYourOwn or added yourself.
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -312,7 +312,7 @@ export default function SchedulePage() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
               <StatCard icon={<CalendarIcon className="w-5 h-5" />} label="Meetings this month" value={stats.total} tone="cedar" />
               <StatCard icon={<Users className="w-5 h-5" />} label="Guests expected" value={stats.guests} tone="sunset" />
-              <StatCard icon={<Globe className="w-5 h-5" />} label="Via WeCanDoLeb" value={stats.platform} tone="blue" />
+              <StatCard icon={<Globe className="w-5 h-5" />} label="Via MakeYourOwn" value={stats.platform} tone="blue" />
               <StatCard icon={<Building2 className="w-5 h-5" />} label="Added directly" value={stats.external} tone="wine" />
             </div>
 
@@ -595,7 +595,7 @@ function MeetingRow({ m, onEdit, onDelete }: { m: Meeting; onEdit: (m: Meeting) 
           <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
             m.source === "PLATFORM" ? "bg-blue-50 text-blue-700" : "bg-wine-50 text-wine-700"
           }`}>
-            {m.source === "PLATFORM" ? "WeCanDoLeb" : "Direct"}
+            {m.source === "PLATFORM" ? "MakeYourOwn" : "Direct"}
           </span>
           {cancelled && <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-200 text-gray-600">Cancelled</span>}
         </div>

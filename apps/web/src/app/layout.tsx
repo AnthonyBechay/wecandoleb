@@ -9,7 +9,7 @@ const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 const playfair = Playfair_Display({ subsets: ["latin"], variable: "--font-playfair" });
 
 export const metadata: Metadata = {
-  title: "WeCanDoLeb — Gift Unique Lebanese Experiences",
+  title: "MakeYourOwn — Gift Unique Lebanese Experiences",
   description:
     "Discover and gift unforgettable experiences across Lebanon. Wine tastings, artisan workshops, cultural tours, and more.",
 };

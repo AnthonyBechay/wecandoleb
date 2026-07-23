@@ -26,18 +26,30 @@ import {
   ScrollText,
   Gift,
   Coins,
+  EyeOff,
 } from "lucide-react";
+
+const STATUS_BADGE: Record<string, string> = {
+  CONFIRMED: "bg-cedar-50 text-cedar-700",
+  COMPLETED: "bg-blue-50 text-blue-700",
+  PENDING: "bg-yellow-50 text-yellow-700",
+  CANCELLED: "bg-red-50 text-red-700",
+  NO_SHOW: "bg-gray-100 text-gray-600",
+};
 import { api } from "@/lib/api";
 
-type Tab = "stats" | "sales" | "activity" | "users" | "businesses" | "experiences" | "registrations";
+type Tab = "stats" | "sales" | "activity" | "bookings" | "reviews" | "users" | "businesses" | "experiences" | "categories" | "registrations";
 
 const TAB_LABELS: Record<Tab, string> = {
   stats: "Overview",
   sales: "Sales",
   activity: "Activity",
+  bookings: "Bookings",
+  reviews: "Reviews",
   users: "Users",
   businesses: "Businesses",
   experiences: "Experiences",
+  categories: "Categories",
   registrations: "Registrations",
 };
 
@@ -58,6 +70,22 @@ export default function AdminPage() {
   const [audit, setAudit] = useState<any[]>([]);
   const [auditCategory, setAuditCategory] = useState("");
   const [auditSearch, setAuditSearch] = useState("");
+
+  // Bookings state
+  const [adminBookings, setAdminBookings] = useState<any[]>([]);
+  const [bookingStatusFilter, setBookingStatusFilter] = useState("");
+  const [bookingSearch, setBookingSearch] = useState("");
+
+  // Reviews state
+  const [adminReviews, setAdminReviews] = useState<any[]>([]);
+  const [reviewFilter, setReviewFilter] = useState("");
+  const [reviewSearch, setReviewSearch] = useState("");
+
+  // Categories state (also used to populate the experience category dropdown)
+  const [categories, setCategories] = useState<any[]>([]);
+  const [newCategory, setNewCategory] = useState({ name: "", description: "" });
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
+  const [editCategoryForm, setEditCategoryForm] = useState<any>({});
 
   // Credit adjustment modal
   const [adjustUser, setAdjustUser] = useState<any>(null);
@@ -155,6 +183,38 @@ export default function AdminPage() {
     }, 250);
     return () => clearTimeout(t);
   }, [tab, auditCategory, auditSearch]);
+
+  // Bookings tab
+  useEffect(() => {
+    if (tab !== "bookings") return;
+    const t = setTimeout(() => {
+      const params = new URLSearchParams();
+      if (bookingStatusFilter) params.set("status", bookingStatusFilter);
+      if (bookingSearch) params.set("search", bookingSearch);
+      const qs = params.toString();
+      api.get<{ bookings: any[] }>(`/api/admin/bookings${qs ? `?${qs}` : ""}`).then((d) => setAdminBookings(d.bookings)).catch(() => {});
+    }, 250);
+    return () => clearTimeout(t);
+  }, [tab, bookingStatusFilter, bookingSearch]);
+
+  // Reviews tab
+  useEffect(() => {
+    if (tab !== "reviews") return;
+    const t = setTimeout(() => {
+      const params = new URLSearchParams();
+      if (reviewFilter) params.set("published", reviewFilter);
+      if (reviewSearch) params.set("search", reviewSearch);
+      const qs = params.toString();
+      api.get<{ reviews: any[] }>(`/api/admin/reviews${qs ? `?${qs}` : ""}`).then((d) => setAdminReviews(d.reviews)).catch(() => {});
+    }, 250);
+    return () => clearTimeout(t);
+  }, [tab, reviewFilter, reviewSearch]);
+
+  // Categories — loaded once (used by the Categories tab AND the experience editor dropdown)
+  useEffect(() => {
+    if (!user || !["ADMIN", "SUPER_ADMIN"].includes(user.role)) return;
+    api.get<any[]>("/api/experiences/meta/categories").then(setCategories).catch(() => {});
+  }, [user]);
 
   useEffect(() => {
     if (tab === "users") {
@@ -539,10 +599,75 @@ export default function AdminPage() {
     }
   };
 
+  // ─── Booking / Review / Category Handlers ───
+
+  const handleCancelBooking = async (id: string) => {
+    if (!window.confirm("Cancel this booking and refund the customer's credits?")) return;
+    try {
+      await api.post(`/api/admin/bookings/${id}/cancel`);
+      setAdminBookings((prev) => prev.map((b) => (b.id === id ? { ...b, status: "CANCELLED" } : b)));
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
+  const handleToggleReview = async (r: any) => {
+    try {
+      await api.put(`/api/admin/reviews/${r.id}/publish`, { isPublished: !r.isPublished });
+      setAdminReviews((prev) => prev.map((x) => (x.id === r.id ? { ...x, isPublished: !r.isPublished } : x)));
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
+  const handleDeleteReview = async (id: string) => {
+    if (!window.confirm("Delete this review permanently?")) return;
+    try {
+      await api.delete(`/api/admin/reviews/${id}`);
+      setAdminReviews((prev) => prev.filter((x) => x.id !== id));
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
+  const refreshCategories = () => api.get<any[]>("/api/experiences/meta/categories").then(setCategories).catch(() => {});
+
+  const handleCreateCategory = async () => {
+    if (!newCategory.name.trim()) return;
+    try {
+      await api.post("/api/admin/categories", newCategory);
+      setNewCategory({ name: "", description: "" });
+      refreshCategories();
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
+  const handleSaveCategory = async (id: string) => {
+    try {
+      await api.put(`/api/admin/categories/${id}`, editCategoryForm);
+      setEditingCategoryId(null);
+      setEditCategoryForm({});
+      refreshCategories();
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
+  const handleDeleteCategory = async (id: string) => {
+    if (!window.confirm("Delete this category?")) return;
+    try {
+      await api.delete(`/api/admin/categories/${id}`);
+      refreshCategories();
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
   if (authLoading || !user || !["ADMIN", "SUPER_ADMIN"].includes(user.role)) return null;
 
   const isSuperAdmin = user.role === "SUPER_ADMIN";
-  const allTabs: Tab[] = ["stats", "sales", "activity", "users", "businesses", "experiences"];
+  const allTabs: Tab[] = ["stats", "sales", "activity", "bookings", "reviews", "users", "businesses", "experiences", "categories"];
   if (isSuperAdmin) allTabs.push("registrations");
 
   const inputClass =
@@ -552,9 +677,15 @@ export default function AdminPage() {
   return (
     <div className="min-h-screen bg-gray-50 py-10">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center gap-2 mb-6">
+        <div className="flex items-center gap-3 mb-6">
           <Shield className="w-6 h-6 text-cedar-700" />
           <h1 className="font-display text-3xl font-bold text-gray-900">Admin Panel</h1>
+          <span className={`badge ${isSuperAdmin ? "bg-wine-50 text-wine-700" : "bg-blue-50 text-blue-700"}`}>
+            {isSuperAdmin ? "Super Admin" : "Admin"}
+          </span>
+          {!isSuperAdmin && (
+            <span className="text-xs text-gray-400 hidden sm:inline">— some actions (roles, deletions, refunds, registrations) are limited to Super Admins</span>
+          )}
         </div>
 
         <div className="flex gap-2 mb-6 flex-wrap">
@@ -766,6 +897,144 @@ export default function AdminPage() {
                 </tbody>
               </table>
               {audit.length === 0 && <div className="p-10 text-center text-gray-400">No activity recorded yet.</div>}
+            </div>
+          </div>
+        )}
+
+        {/* ══════════════════════ Bookings Tab ══════════════════════ */}
+        {tab === "bookings" && (
+          <div>
+            <div className="flex flex-wrap items-center gap-3 mb-4">
+              <div className="relative flex-1 min-w-[200px] max-w-md">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <input type="text" value={bookingSearch} onChange={(e) => setBookingSearch(e.target.value)} placeholder="Search by customer or experience…" className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-cedar-500" />
+              </div>
+              <select value={bookingStatusFilter} onChange={(e) => setBookingStatusFilter(e.target.value)} className="border border-gray-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-cedar-500 bg-white text-sm">
+                <option value="">All statuses</option>
+                {["PENDING", "CONFIRMED", "COMPLETED", "CANCELLED", "NO_SHOW"].map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 text-gray-500">
+                    <tr>
+                      <th className="text-left px-5 py-3 font-medium">Customer</th>
+                      <th className="text-left px-5 py-3 font-medium">Experience</th>
+                      <th className="text-left px-5 py-3 font-medium">Date</th>
+                      <th className="text-right px-5 py-3 font-medium">Guests</th>
+                      <th className="text-right px-5 py-3 font-medium">Credits</th>
+                      <th className="text-left px-5 py-3 font-medium">Status</th>
+                      <th className="text-right px-5 py-3 font-medium">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {adminBookings.map((b) => (
+                      <tr key={b.id}>
+                        <td className="px-5 py-3">
+                          <div className="font-medium text-gray-900">{b.user?.firstName} {b.user?.lastName}</div>
+                          <div className="text-xs text-gray-400">{b.user?.email}</div>
+                        </td>
+                        <td className="px-5 py-3">
+                          <div className="text-gray-900">{b.experience?.title}</div>
+                          <div className="text-xs text-gray-400">{b.experience?.business?.name}</div>
+                        </td>
+                        <td className="px-5 py-3 text-gray-500">{b.session?.startTime ? new Date(b.session.startTime).toLocaleDateString() : "—"}</td>
+                        <td className="px-5 py-3 text-right">{b.participants}</td>
+                        <td className="px-5 py-3 text-right">{(b.totalCredits / 100).toFixed(0)}</td>
+                        <td className="px-5 py-3"><span className={`badge ${STATUS_BADGE[b.status] || "bg-gray-100 text-gray-600"}`}>{b.status}</span></td>
+                        <td className="px-5 py-3 text-right">
+                          {isSuperAdmin && ["CONFIRMED", "PENDING"].includes(b.status) ? (
+                            <button onClick={() => handleCancelBooking(b.id)} className="text-xs font-medium text-red-600 hover:bg-red-50 px-2 py-1 rounded-lg">Cancel & refund</button>
+                          ) : <span className="text-gray-300">—</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {adminBookings.length === 0 && <div className="p-10 text-center text-gray-400">No bookings found.</div>}
+            </div>
+          </div>
+        )}
+
+        {/* ══════════════════════ Reviews Tab ══════════════════════ */}
+        {tab === "reviews" && (
+          <div>
+            <div className="flex flex-wrap items-center gap-3 mb-4">
+              <div className="relative flex-1 min-w-[200px] max-w-md">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <input type="text" value={reviewSearch} onChange={(e) => setReviewSearch(e.target.value)} placeholder="Search reviews…" className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-cedar-500" />
+              </div>
+              <select value={reviewFilter} onChange={(e) => setReviewFilter(e.target.value)} className="border border-gray-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-cedar-500 bg-white text-sm">
+                <option value="">All reviews</option>
+                <option value="true">Published</option>
+                <option value="false">Hidden</option>
+              </select>
+            </div>
+            <div className="space-y-3">
+              {adminReviews.map((r) => (
+                <div key={r.id} className="bg-white rounded-xl border border-gray-100 p-5">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className="flex">{[1, 2, 3, 4, 5].map((n) => <Star key={n} className={`w-4 h-4 ${n <= r.rating ? "text-yellow-400 fill-yellow-400" : "text-gray-200"}`} />)}</div>
+                        {!r.isPublished && <span className="badge bg-gray-100 text-gray-500">Hidden</span>}
+                      </div>
+                      <p className="text-sm text-gray-700">{r.comment || <span className="text-gray-400 italic">No comment</span>}</p>
+                      <p className="text-xs text-gray-400 mt-1.5">
+                        {r.user?.firstName} {r.user?.lastName} · {r.experience?.title} · {new Date(r.createdAt).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button onClick={() => handleToggleReview(r)} className="p-2 rounded-lg bg-gray-100 text-gray-500 hover:bg-gray-200" title={r.isPublished ? "Hide" : "Publish"}>
+                        {r.isPublished ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                      <button onClick={() => handleDeleteReview(r.id)} className="p-2 rounded-lg bg-red-50 text-red-600 hover:bg-red-100" title="Delete"><Trash2 className="w-4 h-4" /></button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {adminReviews.length === 0 && <div className="bg-white rounded-xl border border-gray-100 p-10 text-center text-gray-400">No reviews found.</div>}
+            </div>
+          </div>
+        )}
+
+        {/* ══════════════════════ Categories Tab ══════════════════════ */}
+        {tab === "categories" && (
+          <div className="max-w-3xl">
+            <div className="bg-white rounded-xl border border-gray-100 p-5 mb-4">
+              <h3 className="font-semibold text-gray-900 mb-3">Add category</h3>
+              <div className="flex flex-col sm:flex-row gap-3">
+                <input type="text" value={newCategory.name} onChange={(e) => setNewCategory({ ...newCategory, name: e.target.value })} placeholder="Name" className={inputClass} />
+                <input type="text" value={newCategory.description} onChange={(e) => setNewCategory({ ...newCategory, description: e.target.value })} placeholder="Description (optional)" className={inputClass} />
+                <button onClick={handleCreateCategory} disabled={!newCategory.name.trim()} className="btn-primary text-sm !py-2.5 !px-4 whitespace-nowrap disabled:opacity-50"><Plus className="w-4 h-4 mr-1" /> Add</button>
+              </div>
+            </div>
+            <div className="bg-white rounded-xl border border-gray-100 divide-y divide-gray-50">
+              {categories.map((c) => (
+                <div key={c.id} className="p-4 flex items-center gap-4">
+                  {editingCategoryId === c.id ? (
+                    <>
+                      <input value={editCategoryForm.name} onChange={(e) => setEditCategoryForm({ ...editCategoryForm, name: e.target.value })} className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm flex-1" />
+                      <button onClick={() => handleSaveCategory(c.id)} className="p-1.5 rounded-lg bg-cedar-50 text-cedar-700"><Check className="w-4 h-4" /></button>
+                      <button onClick={() => { setEditingCategoryId(null); setEditCategoryForm({}); }} className="p-1.5 rounded-lg bg-gray-100 text-gray-500"><X className="w-4 h-4" /></button>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex-1">
+                        <p className="font-medium text-gray-900">{c.name}</p>
+                        <p className="text-xs text-gray-400">{c.slug} · {c._count?.experiences ?? 0} experiences</p>
+                      </div>
+                      <button onClick={() => { setEditingCategoryId(c.id); setEditCategoryForm({ name: c.name, description: c.description || "" }); }} className="p-1.5 rounded-lg bg-gray-100 text-gray-500 hover:bg-gray-200"><Edit className="w-4 h-4" /></button>
+                      {isSuperAdmin && (
+                        <button onClick={() => handleDeleteCategory(c.id)} className="p-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100" title={c._count?.experiences ? "In use — cannot delete" : "Delete"}><Trash2 className="w-4 h-4" /></button>
+                      )}
+                    </>
+                  )}
+                </div>
+              ))}
+              {categories.length === 0 && <div className="p-10 text-center text-gray-400">No categories yet.</div>}
             </div>
           </div>
         )}
@@ -1803,13 +2072,20 @@ export default function AdminPage() {
                           />
                         </div>
                         <div>
-                          <label className={labelClass}>Category ID</label>
-                          <input
-                            type="text"
-                            value={editingExp.categoryId || ""}
-                            onChange={(e) => handleExpFieldChange("categoryId", e.target.value)}
-                            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-cedar-500"
-                          />
+                          <label className={labelClass}>Category</label>
+                          <div className="relative">
+                            <select
+                              value={editingExp.categoryId || ""}
+                              onChange={(e) => handleExpFieldChange("categoryId", e.target.value)}
+                              className="w-full appearance-none border border-gray-200 rounded-lg px-3 py-2 pr-8 text-sm outline-none focus:ring-2 focus:ring-cedar-500 bg-white"
+                            >
+                              <option value="">Select category…</option>
+                              {categories.map((c) => (
+                                <option key={c.id} value={c.id}>{c.name}</option>
+                              ))}
+                            </select>
+                            <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                          </div>
                         </div>
                         <div>
                           <label className={labelClass}>Status</label>

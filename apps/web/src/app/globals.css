@@ -9,26 +9,65 @@
   body {
     @apply antialiased text-gray-900 bg-white;
   }
+  ::selection {
+    @apply bg-cedar-200 text-cedar-900;
+  }
+  /* Consistent, accessible focus ring across interactive elements */
+  a:focus-visible,
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    @apply outline-none ring-2 ring-cedar-500 ring-offset-2 ring-offset-white;
+  }
 }
 
 @layer components {
   .btn-primary {
-    @apply inline-flex items-center justify-center px-6 py-3 rounded-xl font-semibold text-white bg-cedar-700 hover:bg-cedar-800 transition-all duration-200 shadow-lg shadow-cedar-700/25 hover:shadow-cedar-800/30;
+    @apply inline-flex items-center justify-center px-6 py-3 rounded-xl font-semibold text-white
+      bg-gradient-to-br from-cedar-600 to-cedar-800
+      shadow-lg shadow-cedar-800/20 transition-all duration-200
+      hover:shadow-xl hover:shadow-cedar-800/30 hover:-translate-y-0.5 active:translate-y-0;
   }
   .btn-secondary {
-    @apply inline-flex items-center justify-center px-6 py-3 rounded-xl font-semibold text-cedar-700 bg-white border-2 border-cedar-200 hover:border-cedar-700 hover:bg-cedar-50 transition-all duration-200;
+    @apply inline-flex items-center justify-center px-6 py-3 rounded-xl font-semibold text-cedar-800
+      bg-white border border-cedar-200 transition-all duration-200
+      hover:border-cedar-400 hover:bg-cedar-50 active:bg-cedar-100;
   }
   .btn-accent {
-    @apply inline-flex items-center justify-center px-6 py-3 rounded-xl font-semibold text-white bg-sunset-500 hover:bg-sunset-600 transition-all duration-200 shadow-lg shadow-sunset-500/25;
+    @apply inline-flex items-center justify-center px-6 py-3 rounded-xl font-semibold text-white
+      bg-gradient-to-br from-sunset-400 to-sunset-600
+      shadow-lg shadow-sunset-500/25 transition-all duration-200
+      hover:shadow-xl hover:shadow-sunset-600/30 hover:-translate-y-0.5 active:translate-y-0;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center justify-center px-4 py-2 rounded-lg font-medium text-gray-600
+      transition-colors hover:bg-gray-100 hover:text-gray-900;
   }
   .card {
-    @apply bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow duration-300;
+    @apply bg-white rounded-2xl shadow-soft border border-gray-100 overflow-hidden
+      transition-all duration-300 hover:shadow-lift hover:-translate-y-0.5;
+  }
+  .input {
+    @apply w-full px-4 py-2.5 border border-gray-200 rounded-xl outline-none text-sm bg-white
+      transition focus:ring-2 focus:ring-cedar-500 focus:border-transparent placeholder:text-gray-400;
+  }
+  .label {
+    @apply block text-sm font-medium text-gray-700 mb-1.5;
+  }
+  .badge {
+    @apply inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-0.5 rounded-full;
   }
   .section-title {
-    @apply text-3xl md:text-4xl font-display font-bold text-gray-900;
+    @apply text-3xl md:text-4xl font-display font-bold text-gray-900 tracking-tight;
   }
   .section-subtitle {
     @apply text-lg text-gray-600 max-w-2xl;
+  }
+  /* Subtle animated brand chip used in eyebrows */
+  .eyebrow {
+    @apply inline-flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-cedar-700
+      bg-cedar-50 px-3 py-1.5 rounded-full;
   }
 }
 
@@ -40,3 +79,8 @@
 .animate-fade-in {
   animation: fade-in 0.6s ease-out both;
 }
+
+/* Staggered reveal helpers */
+.animate-fade-in.delay-1 { animation-delay: 0.1s; }
+.animate-fade-in.delay-2 { animation-delay: 0.2s; }
+.animate-fade-in.delay-3 { animation-delay: 0.3s; }

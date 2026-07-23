@@ -36,6 +36,10 @@ router.post("/", authenticate, async (req: AuthRequest, res: Response) => {
       res.status(400).json({ error: "This session has already started" });
       return;
     }
+    if (participants > session.experience.maxParticipants) {
+      res.status(400).json({ error: `This experience allows at most ${session.experience.maxParticipants} people per booking` });
+      return;
+    }
     if (session.spotsLeft < participants) {
       res.status(400).json({ error: "Not enough spots available" });
       return;

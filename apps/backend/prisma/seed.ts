@@ -47,13 +47,13 @@ async function main() {
 
   // ── Super Admin ────────────────────────────────
   const admin = await prisma.user.upsert({
-    where: { email: "admin@wecandoleb.com" },
+    where: { email: "admin@makeyourown.com" },
     update: {},
     create: {
-      email: "admin@wecandoleb.com",
+      email: "admin@makeyourown.com",
       passwordHash,
       firstName: "Admin",
-      lastName: "WeCanDoLeb",
+      lastName: "MakeYourOwn",
       role: "SUPER_ADMIN",
       emailVerified: true,
       creditBalance: 100000,
@@ -62,10 +62,10 @@ async function main() {
 
   // ── Business Owner ─────────────────────────────
   const owner = await prisma.user.upsert({
-    where: { email: "owner@wecandoleb.com" },
+    where: { email: "owner@makeyourown.com" },
     update: {},
     create: {
-      email: "owner@wecandoleb.com",
+      email: "owner@makeyourown.com",
       passwordHash,
       firstName: "Karim",
       lastName: "Haddad",
@@ -77,10 +77,10 @@ async function main() {
 
   // ── Admin ───────────────────────────────────────
   await prisma.user.upsert({
-    where: { email: "moderator@wecandoleb.com" },
+    where: { email: "moderator@makeyourown.com" },
     update: {},
     create: {
-      email: "moderator@wecandoleb.com",
+      email: "moderator@makeyourown.com",
       passwordHash,
       firstName: "Nadia",
       lastName: "Saab",
@@ -92,10 +92,10 @@ async function main() {
 
   // ── Demo User ──────────────────────────────────
   const demoUser = await prisma.user.upsert({
-    where: { email: "user@wecandoleb.com" },
+    where: { email: "user@makeyourown.com" },
     update: {},
     create: {
-      email: "user@wecandoleb.com",
+      email: "user@makeyourown.com",
       passwordHash,
       firstName: "Lea",
       lastName: "Khalil",
@@ -469,7 +469,24 @@ Whether you're a beginner or experienced practitioner, this retreat is designed 
       create: { id, ...data, costCredits, costCurrency, status: "ACTIVE" },
     });
 
-    // Create sessions for each experience (next 4 weekends)
+    // Primary hosting location = the owning business.
+    const primaryLinkId = `loc-${id}-primary`;
+    await prisma.experienceBusiness.upsert({
+      where: { id: primaryLinkId },
+      update: {},
+      create: {
+        id: primaryLinkId,
+        experienceId: id,
+        businessId: data.businessId,
+        status: "ACCEPTED",
+        isPrimary: true,
+        address: data.address,
+        city: data.city,
+        region: data.region,
+      },
+    });
+
+    // Create sessions for each experience (next 4 weekends), tied to the primary location
     for (let week = 1; week <= 4; week++) {
       const date = new Date();
       date.setDate(date.getDate() + (week * 7) - date.getDay() + 6); // Next Saturday
@@ -480,17 +497,72 @@ Whether you're a beginner or experienced practitioner, this retreat is designed 
 
       await prisma.experienceSession.upsert({
         where: { id: `session-${id}-week${week}` },
-        update: {},
+        update: { experienceBusinessId: primaryLinkId, capacity: data.maxParticipants },
         create: {
           id: `session-${id}-week${week}`,
           experienceId: id,
+          experienceBusinessId: primaryLinkId,
           startTime: date,
           endTime: endDate,
+          capacity: data.maxParticipants,
           spotsLeft: data.maxParticipants,
         },
       });
     }
   }
+
+  // ── Demo multi-location collaboration ──────────────
+  // The Byblos pottery workshop (exp-4, owned by Tripoli Heritage Crafts) is
+  // also hosted by Bekaa Valley Experiences — an accepted second location, plus
+  // a pending request to Lebanon Mountain Trails to showcase the request flow.
+  const collabLinkId = "loc-exp4-bekaa";
+  await prisma.experienceBusiness.upsert({
+    where: { id: collabLinkId },
+    update: {},
+    create: {
+      id: collabLinkId,
+      experienceId: "exp-4",
+      businessId: business3.id, // Bekaa Valley Experiences
+      status: "ACCEPTED",
+      isPrimary: false,
+      address: "Zahlé Arts Center",
+      city: "Zahlé",
+      region: "Bekaa Valley",
+    },
+  });
+  for (let week = 1; week <= 3; week++) {
+    const date = new Date();
+    date.setDate(date.getDate() + week * 7 - date.getDay() + 5); // next few Fridays
+    date.setHours(15, 0, 0, 0);
+    const endDate = new Date(date);
+    endDate.setMinutes(endDate.getMinutes() + 120);
+    await prisma.experienceSession.upsert({
+      where: { id: `session-exp4-bekaa-week${week}` },
+      update: { experienceBusinessId: collabLinkId, capacity: 6 },
+      create: {
+        id: `session-exp4-bekaa-week${week}`,
+        experienceId: "exp-4",
+        experienceBusinessId: collabLinkId,
+        startTime: date,
+        endTime: endDate,
+        capacity: 6,
+        spotsLeft: 6,
+      },
+    });
+  }
+  await prisma.experienceBusiness.upsert({
+    where: { id: "loc-exp4-lmt" },
+    update: {},
+    create: {
+      id: "loc-exp4-lmt",
+      experienceId: "exp-4",
+      businessId: business4.id, // Lebanon Mountain Trails — pending request
+      status: "PENDING",
+      isPrimary: false,
+      city: "Bsharri",
+      region: "North Lebanon",
+    },
+  });
 
   // ── Credit Packages ────────────────────────────
   const packages = [
@@ -752,10 +824,10 @@ Whether you're a beginner or experienced practitioner, this retreat is designed 
   console.log("  - Real bookings & reviews for all experiences");
   console.log("");
   console.log("Login credentials (all accounts use password: admin123!):");
-  console.log("  Super Admin:    admin@wecandoleb.com");
-  console.log("  Admin:          moderator@wecandoleb.com");
-  console.log("  Business Owner: owner@wecandoleb.com");
-  console.log("  Demo User:      user@wecandoleb.com");
+  console.log("  Super Admin:    admin@makeyourown.com");
+  console.log("  Admin:          moderator@makeyourown.com");
+  console.log("  Business Owner: owner@makeyourown.com");
+  console.log("  Demo User:      user@makeyourown.com");
   console.log("  Reviewers:      maya@example.com, sami@example.com, rania@example.com");
 }
 

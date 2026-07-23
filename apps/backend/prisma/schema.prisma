@@ -144,8 +144,9 @@ model Business {
   updatedAt   DateTime @updatedAt
 
   // Relations
-  experiences Experience[]
-  meetings    ProviderMeeting[]
+  experiences     Experience[]
+  meetings        ProviderMeeting[]
+  experienceLinks ExperienceBusiness[]
 
   @@map("businesses")
 }
@@ -175,18 +176,21 @@ model Experience {
   shortDescription String
   description      String
   highlights       String[]         // array of highlight bullet points
-  includes         String[]         // what's included
-  whatToBring      String[]         // what to bring
+  includes         String[]         // what's included (itemized)
+  includesNote     String?          // "what you get" — free text
+  whatToBring      String[]         // what to bring (itemized checkboxes)
+  whatToBringNote  String?          // extra "what to bring" — free text
   priceCredits     Int              // price in credits (cents)
   priceCurrency    Float            // price in USD for display
   costCredits      Int              @default(0) // provider's cost in credits (cents)
   costCurrency     Float            @default(0)  // provider's cost in USD
   duration         Int              // duration in minutes
-  maxParticipants  Int
-  minParticipants  Int              @default(1)
+  maxParticipants  Int              // max people per session
+  minParticipants  Int              @default(1) // min people for a session to run
   difficulty       DifficultyLevel  @default(EASY)
   minAge           Int?
-  address          String
+  maxAge           Int?
+  address          String           // primary location address
   city             String
   region           String
   latitude         Float?
@@ -212,8 +216,43 @@ model Experience {
   wishlist  WishlistItem[]
   giftItems GiftItem[]
   meetings  ProviderMeeting[]
+  locations ExperienceBusiness[] // businesses/venues that host this experience
 
   @@map("experiences")
+}
+
+// ─── EXPERIENCE ↔ BUSINESS (multi-location collaboration) ─
+// An experience can be hosted by more than one business (e.g. a dancing class
+// run at a Byblos venue and a Beirut venue). The owning business is added
+// automatically as the primary; the owner can request other businesses to
+// collaborate, and each of those must accept before it goes live.
+
+enum CollaborationStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+}
+
+model ExperienceBusiness {
+  id           String              @id @default(cuid())
+  experienceId String
+  experience   Experience          @relation(fields: [experienceId], references: [id], onDelete: Cascade)
+  businessId   String
+  business     Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  status       CollaborationStatus @default(PENDING)
+  isPrimary    Boolean             @default(false)
+  // Location-specific venue details (defaults copied from the experience)
+  address      String?
+  city         String?
+  region       String?
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  sessions ExperienceSession[]
+
+  @@unique([experienceId, businessId])
+  @@index([businessId, status])
+  @@map("experience_businesses")
 }
 
 model ExperienceImage {
@@ -229,15 +268,20 @@ model ExperienceImage {
 }
 
 model ExperienceSession {
-  id           String     @id @default(cuid())
-  experienceId String
-  experience   Experience @relation(fields: [experienceId], references: [id], onDelete: Cascade)
-  startTime    DateTime
-  endTime      DateTime
-  spotsLeft    Int
-  isActive     Boolean    @default(true)
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  id                   String              @id @default(cuid())
+  experienceId         String
+  experience           Experience          @relation(fields: [experienceId], references: [id], onDelete: Cascade)
+  // Which hosting location (business) this session runs at. Nullable for
+  // legacy single-location experiences; new sessions always set it.
+  experienceBusinessId String?
+  location             ExperienceBusiness? @relation(fields: [experienceBusinessId], references: [id], onDelete: Cascade)
+  startTime            DateTime
+  endTime              DateTime
+  capacity             Int?                // original number of spots (for "X of Y booked")
+  spotsLeft            Int
+  isActive             Boolean             @default(true)
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
 
   // Relations
   bookings Booking[]

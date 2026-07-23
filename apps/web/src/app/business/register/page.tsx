@@ -115,7 +115,7 @@ export default function BusinessRegisterPage() {
               Register Your Business
             </h1>
             <p className="text-lg text-white/80 max-w-2xl mx-auto">
-              Join the WeCanDoLeb platform and connect with visitors looking
+              Join the MakeYourOwn platform and connect with visitors looking
               for authentic Lebanese experiences. Share your story, reach new
               customers, and grow your business.
             </p>

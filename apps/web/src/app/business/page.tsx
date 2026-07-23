@@ -69,6 +69,9 @@ interface Experience {
   highlights?: string[];
   includes?: string[];
   whatToBring?: string[];
+  whatToBringNote?: string;
+  includesNote?: string;
+  maxAge?: number;
   priceCredits?: number;
   priceCurrency?: number;
   costCredits?: number;
@@ -92,13 +95,22 @@ interface Category {
   name: string;
 }
 
+// Common "what to bring" items offered as quick checkboxes
+const COMMON_BRING = [
+  "Comfortable shoes", "Water bottle", "Sun protection", "Hat / cap", "Camera",
+  "ID / passport", "Cash", "Warm layer", "Swimwear", "Snacks",
+];
+
 const EMPTY_EXP_FORM = {
   title: "",
   shortDescription: "",
   description: "",
   highlights: "",
   includes: "",
+  includesNote: "",
+  whatToBringCommon: [] as string[],
   whatToBring: "",
+  whatToBringNote: "",
   priceCredits: "",
   priceCurrency: "",
   costCredits: "",
@@ -108,6 +120,7 @@ const EMPTY_EXP_FORM = {
   minParticipants: "",
   difficulty: "EASY",
   minAge: "",
+  maxAge: "",
   address: "",
   city: "",
   region: "",
@@ -148,6 +161,8 @@ export default function BusinessPage() {
   const [editingExp, setEditingExp] = useState<Experience | null>(null);
   const [expForm, setExpForm] = useState<ExpForm>({ ...EMPTY_EXP_FORM });
   const [savingExp, setSavingExp] = useState(false);
+  const [manageExp, setManageExp] = useState<Experience | null>(null);
+  const [incomingRequests, setIncomingRequests] = useState<any[]>([]);
 
   /* --- image state (inline in edit form) --- */
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -182,6 +197,21 @@ export default function BusinessPage() {
   useEffect(() => {
     api.get<Category[]>("/api/experiences/meta/categories").then(setCategories).catch(() => {});
   }, []);
+
+  /* ---- incoming collaboration requests ---- */
+  const loadRequests = () => {
+    api.get<any[]>("/api/businesses/collaboration-requests").then(setIncomingRequests).catch(() => {});
+  };
+  useEffect(() => { if (user) loadRequests(); }, [user]);
+
+  const handleCollabAction = async (linkId: string, action: "accept" | "decline") => {
+    try {
+      await api.put(`/api/businesses/collaboration-requests/${linkId}`, { action });
+      setIncomingRequests((prev) => prev.filter((r) => r.id !== linkId));
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
 
   /* ================================================================ */
   /* Business CRUD                                                     */
@@ -218,7 +248,10 @@ export default function BusinessPage() {
       description: exp.description || "",
       highlights: (exp.highlights || []).join(", "),
       includes: (exp.includes || []).join(", "),
-      whatToBring: (exp.whatToBring || []).join(", "),
+      includesNote: exp.includesNote || "",
+      whatToBringCommon: (exp.whatToBring || []).filter((x) => COMMON_BRING.includes(x)),
+      whatToBring: (exp.whatToBring || []).filter((x) => !COMMON_BRING.includes(x)).join(", "),
+      whatToBringNote: exp.whatToBringNote || "",
       priceCredits: exp.priceCredits != null ? String(exp.priceCredits) : "",
       priceCurrency: exp.priceCurrency != null ? String(exp.priceCurrency) : "",
       costCredits: exp.costCredits != null ? String(exp.costCredits) : "",
@@ -228,6 +261,7 @@ export default function BusinessPage() {
       minParticipants: exp.minParticipants != null ? String(exp.minParticipants) : "",
       difficulty: exp.difficulty || "EASY",
       minAge: exp.minAge != null ? String(exp.minAge) : "",
+      maxAge: exp.maxAge != null ? String(exp.maxAge) : "",
       address: exp.address || "",
       city: exp.city || "",
       region: exp.region || "",
@@ -250,7 +284,9 @@ export default function BusinessPage() {
       description: expForm.description || undefined,
       highlights: split(expForm.highlights),
       includes: split(expForm.includes),
-      whatToBring: split(expForm.whatToBring),
+      includesNote: expForm.includesNote || undefined,
+      whatToBring: [...expForm.whatToBringCommon, ...split(expForm.whatToBring)],
+      whatToBringNote: expForm.whatToBringNote || undefined,
       priceCredits: expForm.priceCredits ? Number(expForm.priceCredits) : undefined,
       priceCurrency: expForm.priceCurrency ? Number(expForm.priceCurrency) : undefined,
       costCredits: expForm.costCredits !== "" ? Number(expForm.costCredits) : undefined,
@@ -260,6 +296,7 @@ export default function BusinessPage() {
       minParticipants: expForm.minParticipants ? Number(expForm.minParticipants) : undefined,
       difficulty: expForm.difficulty || undefined,
       minAge: expForm.minAge ? Number(expForm.minAge) : undefined,
+      maxAge: expForm.maxAge ? Number(expForm.maxAge) : undefined,
       address: expForm.address || undefined,
       city: expForm.city || undefined,
       region: expForm.region || undefined,
@@ -461,20 +498,64 @@ export default function BusinessPage() {
               className={inputCls}
               placeholder="Highlights (comma-separated)"
             />
-            <input
-              type="text"
-              value={expForm.includes}
-              onChange={(e) => setExpForm({ ...expForm, includes: e.target.value })}
-              className={inputCls}
-              placeholder="Includes (comma-separated)"
-            />
-            <input
-              type="text"
-              value={expForm.whatToBring}
-              onChange={(e) => setExpForm({ ...expForm, whatToBring: e.target.value })}
-              className={inputCls}
-              placeholder="What to bring (comma-separated)"
-            />
+            {/* What you get */}
+            <div className="rounded-xl border border-gray-100 bg-gray-50 p-4 space-y-2">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">What you get</p>
+              <input
+                type="text"
+                value={expForm.includes}
+                onChange={(e) => setExpForm({ ...expForm, includes: e.target.value })}
+                className={inputCls}
+                placeholder="Included items (comma-separated) — e.g. Guide, Lunch, Equipment"
+              />
+              <textarea
+                value={expForm.includesNote}
+                onChange={(e) => setExpForm({ ...expForm, includesNote: e.target.value })}
+                className={`${inputCls} h-16 resize-none`}
+                placeholder="Anything else guests get (free text)"
+              />
+            </div>
+
+            {/* What to bring */}
+            <div className="rounded-xl border border-gray-100 bg-gray-50 p-4 space-y-3">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">What to bring</p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {COMMON_BRING.map((item) => {
+                  const checked = expForm.whatToBringCommon.includes(item);
+                  return (
+                    <label key={item} className={`flex items-center gap-2 text-sm px-2.5 py-1.5 rounded-lg cursor-pointer border ${checked ? "border-cedar-300 bg-cedar-50 text-cedar-800" : "border-gray-200 bg-white text-gray-600"}`}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) =>
+                          setExpForm({
+                            ...expForm,
+                            whatToBringCommon: e.target.checked
+                              ? [...expForm.whatToBringCommon, item]
+                              : expForm.whatToBringCommon.filter((x) => x !== item),
+                          })
+                        }
+                        className="accent-cedar-600"
+                      />
+                      {item}
+                    </label>
+                  );
+                })}
+              </div>
+              <input
+                type="text"
+                value={expForm.whatToBring}
+                onChange={(e) => setExpForm({ ...expForm, whatToBring: e.target.value })}
+                className={inputCls}
+                placeholder="Custom items (comma-separated)"
+              />
+              <textarea
+                value={expForm.whatToBringNote}
+                onChange={(e) => setExpForm({ ...expForm, whatToBringNote: e.target.value })}
+                className={`${inputCls} h-16 resize-none`}
+                placeholder="Extra notes on what to bring (free text)"
+              />
+            </div>
 
             <div className="rounded-xl border border-gray-100 bg-gray-50 p-4 space-y-3">
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Pricing & margin</p>
@@ -559,7 +640,7 @@ export default function BusinessPage() {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-3 gap-4">
               <select
                 value={expForm.difficulty}
                 onChange={(e) => setExpForm({ ...expForm, difficulty: e.target.value })}
@@ -575,6 +656,13 @@ export default function BusinessPage() {
                 onChange={(e) => setExpForm({ ...expForm, minAge: e.target.value })}
                 className={inputCls}
                 placeholder="Min age"
+              />
+              <input
+                type="number"
+                value={expForm.maxAge}
+                onChange={(e) => setExpForm({ ...expForm, maxAge: e.target.value })}
+                className={inputCls}
+                placeholder="Max age"
               />
             </div>
 
@@ -863,6 +951,13 @@ export default function BusinessPage() {
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
                     <button
+                      onClick={() => setManageExp(exp)}
+                      className="p-2 text-gray-400 hover:text-cedar-600 hover:bg-cedar-50 rounded-lg transition-colors"
+                      title="Locations & sessions"
+                    >
+                      <CalendarDays className="w-4 h-4" />
+                    </button>
+                    <button
                       onClick={() => openEditExp(exp)}
                       className="p-2 text-gray-400 hover:text-cedar-600 hover:bg-cedar-50 rounded-lg transition-colors"
                       title="Edit"
@@ -904,6 +999,12 @@ export default function BusinessPage() {
         </div>
 
         {renderExpForm()}
+        {manageExp && (
+          <ManageExperienceModal
+            experience={manageExp}
+            onClose={() => setManageExp(null)}
+          />
+        )}
       </div>
     );
   }
@@ -930,6 +1031,29 @@ export default function BusinessPage() {
             </div>
           )}
         </div>
+
+        {/* Incoming collaboration requests */}
+        {incomingRequests.length > 0 && (
+          <div className="bg-cedar-50 border border-cedar-200 rounded-2xl p-5 mb-6">
+            <h2 className="font-semibold text-cedar-900 mb-3 flex items-center gap-2">
+              <MapPin className="w-4 h-4" /> Collaboration requests ({incomingRequests.length})
+            </h2>
+            <div className="space-y-2">
+              {incomingRequests.map((r) => (
+                <div key={r.id} className="flex items-center gap-3 bg-white rounded-xl border border-gray-100 p-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900 truncate">{r.experience?.title}</p>
+                    <p className="text-xs text-gray-500">
+                      From {r.experience?.business?.name} · to host at <span className="font-medium">{r.business?.name}</span>
+                    </p>
+                  </div>
+                  <button onClick={() => handleCollabAction(r.id, "accept")} className="btn-primary text-xs !py-1.5 !px-3">Accept</button>
+                  <button onClick={() => handleCollabAction(r.id, "decline")} className="text-xs font-medium text-red-600 hover:bg-red-50 px-3 py-1.5 rounded-lg">Decline</button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {user.role === "USER" && (
           <div className="bg-white rounded-2xl border border-gray-100 p-8 text-center">
@@ -1074,6 +1198,200 @@ export default function BusinessPage() {
             </div>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+/* ======================================================================== */
+/* Manage locations & sessions for a single experience                       */
+/* ======================================================================== */
+interface Loc {
+  id: string;
+  status: "PENDING" | "ACCEPTED" | "DECLINED";
+  isPrimary: boolean;
+  city?: string | null;
+  region?: string | null;
+  business: { id: string; name: string; city?: string | null; region?: string | null };
+  _count?: { sessions: number };
+}
+interface Sess {
+  id: string;
+  startTime: string;
+  endTime: string;
+  spotsLeft: number;
+  capacity?: number | null;
+  location?: { id: string; business: { id: string; name: string } } | null;
+  _count?: { bookings: number };
+}
+
+function ManageExperienceModal({
+  experience,
+  onClose,
+}: {
+  experience: Experience;
+  onClose: () => void;
+}) {
+  const [locations, setLocations] = useState<Loc[]>([]);
+  const [sessions, setSessions] = useState<Sess[]>([]);
+  const [collabSearch, setCollabSearch] = useState("");
+  const [collabResults, setCollabResults] = useState<{ id: string; name: string; city?: string | null; region?: string | null; isVerified?: boolean }[]>([]);
+  const [sessLoc, setSessLoc] = useState("");
+  const [sessDate, setSessDate] = useState("");
+  const [sessTime, setSessTime] = useState("10:00");
+  const [sessCap, setSessCap] = useState(String(experience.maxParticipants ?? 10));
+  const [busy, setBusy] = useState(false);
+
+  const load = () => {
+    api.get<Loc[]>(`/api/experiences/${experience.id}/collaborations`).then(setLocations).catch(() => {});
+    api.get<Sess[]>(`/api/experiences/${experience.id}/sessions`).then(setSessions).catch(() => {});
+  };
+  useEffect(load, [experience.id]);
+
+  const accepted = locations.filter((l) => l.status === "ACCEPTED");
+  const linkedBizIds = new Set(locations.map((l) => l.business.id));
+
+  // Debounced search across all active businesses (own or other owners')
+  useEffect(() => {
+    if (collabSearch.trim().length < 2) { setCollabResults([]); return; }
+    const t = setTimeout(() => {
+      api.get<any[]>(`/api/businesses/search?q=${encodeURIComponent(collabSearch.trim())}`)
+        .then((r) => setCollabResults(r.filter((b) => !linkedBizIds.has(b.id))))
+        .catch(() => setCollabResults([]));
+    }, 300);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [collabSearch, locations]);
+
+  const requestCollab = async (businessId: string) => {
+    setBusy(true);
+    try {
+      await api.post(`/api/experiences/${experience.id}/collaborations`, { businessId });
+      setCollabSearch("");
+      setCollabResults([]);
+      load();
+    } catch (err: any) { alert(err.message); } finally { setBusy(false); }
+  };
+
+  const removeLoc = async (id: string) => {
+    if (!confirm("Remove this location?")) return;
+    try { await api.delete(`/api/experiences/${experience.id}/collaborations/${id}`); load(); }
+    catch (err: any) { alert(err.message); }
+  };
+
+  const addSession = async () => {
+    if (!sessLoc || !sessDate) { alert("Pick a location and date"); return; }
+    setBusy(true);
+    try {
+      const startTime = new Date(`${sessDate}T${sessTime || "10:00"}`).toISOString();
+      await api.post(`/api/experiences/${experience.id}/sessions`, {
+        experienceBusinessId: sessLoc,
+        startTime,
+        capacity: Number(sessCap) || experience.maxParticipants,
+      });
+      setSessDate("");
+      load();
+    } catch (err: any) { alert(err.message); } finally { setBusy(false); }
+  };
+
+  const delSession = async (id: string) => {
+    if (!confirm("Delete this session?")) return;
+    try { await api.delete(`/api/experiences/${experience.id}/sessions/${id}`); load(); }
+    catch (err: any) { alert(err.message); }
+  };
+
+  const statusPill = (s: Loc["status"]) =>
+    s === "ACCEPTED" ? "bg-cedar-50 text-cedar-700" : s === "PENDING" ? "bg-yellow-50 text-yellow-700" : "bg-red-50 text-red-700";
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl p-6 sm:p-8 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="text-xl font-bold text-gray-900 font-display">Locations & sessions</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
+        </div>
+        <p className="text-sm text-gray-500 mb-5">{experience.title}</p>
+
+        {/* Locations */}
+        <h3 className="font-semibold text-gray-900 mb-2 flex items-center gap-2"><MapPin className="w-4 h-4 text-cedar-600" /> Hosting locations</h3>
+        <div className="space-y-2 mb-3">
+          {locations.map((l) => (
+            <div key={l.id} className="flex items-center gap-3 p-3 rounded-xl border border-gray-100 bg-gray-50">
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-gray-900 text-sm">{l.business.name} {l.isPrimary && <span className="text-xs text-gray-400">(primary)</span>}</p>
+                <p className="text-xs text-gray-400">{l.city || l.business.city || "—"}{(l.region || l.business.region) ? `, ${l.region || l.business.region}` : ""}</p>
+              </div>
+              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${statusPill(l.status)}`}>{l.status}</span>
+              {!l.isPrimary && (
+                <button onClick={() => removeLoc(l.id)} className="p-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100"><Trash2 className="w-3.5 h-3.5" /></button>
+              )}
+            </div>
+          ))}
+        </div>
+        <div className="mb-6">
+          <input
+            type="text"
+            value={collabSearch}
+            onChange={(e) => setCollabSearch(e.target.value)}
+            className={inputCls}
+            placeholder="Invite another venue — search any business by name or city…"
+          />
+          {collabSearch.trim().length >= 2 && (
+            <div className="mt-1 border border-gray-200 rounded-xl divide-y divide-gray-50 overflow-hidden">
+              {collabResults.length === 0 ? (
+                <p className="px-3 py-2.5 text-sm text-gray-400">No matching businesses</p>
+              ) : (
+                collabResults.map((b) => (
+                  <button
+                    key={b.id}
+                    type="button"
+                    onClick={() => requestCollab(b.id)}
+                    disabled={busy}
+                    className="w-full flex items-center justify-between px-3 py-2.5 text-left hover:bg-cedar-50 transition disabled:opacity-50"
+                  >
+                    <span className="min-w-0">
+                      <span className="text-sm font-medium text-gray-900">{b.name}</span>
+                      {b.isVerified && <Check className="w-3.5 h-3.5 text-cedar-600 inline ml-1" />}
+                      <span className="block text-xs text-gray-400">{b.city || "—"}{b.region ? `, ${b.region}` : ""}</span>
+                    </span>
+                    <span className="text-xs font-semibold text-cedar-700 shrink-0">Request →</span>
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Add session */}
+        <h3 className="font-semibold text-gray-900 mb-2 flex items-center gap-2"><CalendarDays className="w-4 h-4 text-cedar-600" /> Sessions</h3>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+          <select value={sessLoc} onChange={(e) => setSessLoc(e.target.value)} className={`${inputCls} col-span-2 sm:col-span-1`}>
+            <option value="">Location…</option>
+            {accepted.map((l) => <option key={l.id} value={l.id}>{l.business.name}</option>)}
+          </select>
+          <input type="date" value={sessDate} onChange={(e) => setSessDate(e.target.value)} className={inputCls} />
+          <input type="time" value={sessTime} onChange={(e) => setSessTime(e.target.value)} className={inputCls} />
+          <input type="number" min={1} value={sessCap} onChange={(e) => setSessCap(e.target.value)} className={inputCls} placeholder="Capacity" />
+        </div>
+        <button onClick={addSession} disabled={busy || !sessLoc || !sessDate} className="btn-primary text-sm !py-2 !px-4 mb-4 disabled:opacity-50"><Plus className="w-4 h-4 mr-1" /> Add session</button>
+
+        <div className="space-y-2">
+          {sessions.length === 0 && <p className="text-sm text-gray-400">No sessions yet. Add one above.</p>}
+          {sessions.map((s) => (
+            <div key={s.id} className="flex items-center gap-3 p-3 rounded-xl border border-gray-100">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-gray-900">
+                  {new Date(s.startTime).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                </p>
+                <p className="text-xs text-gray-400">
+                  {s.location?.business.name || "—"} · {s.capacity != null ? `${s.spotsLeft}/${s.capacity}` : `${s.spotsLeft}`} spots left
+                  {s._count && s._count.bookings > 0 ? ` · ${s._count.bookings} booking(s)` : ""}
+                </p>
+              </div>
+              <button onClick={() => delSession(s.id)} className="p-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100" title="Delete"><Trash2 className="w-3.5 h-3.5" /></button>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

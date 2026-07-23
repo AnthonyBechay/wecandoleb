@@ -29,7 +29,7 @@ export default function AboutPage() {
           <div className="text-center mb-14">
             <h2 className="section-title">Our Mission</h2>
             <p className="text-gray-600 mt-4 text-lg leading-relaxed max-w-3xl mx-auto">
-              WeCanDoLeb is a platform that connects people with the authentic soul of Lebanon.
+              MakeYourOwn is a platform that connects people with the authentic soul of Lebanon.
               We curate unique experiences — from wine tastings in family vineyards to artisan workshops
               in historic cities — and make it easy to gift these moments to loved ones.
             </p>

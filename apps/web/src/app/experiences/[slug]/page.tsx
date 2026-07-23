@@ -7,17 +7,25 @@ import { MapPin, Clock, Users, Star, Check, ArrowLeft, Gift, Calendar, Mountain,
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 
+interface Session { id: string; startTime: string; endTime: string; spotsLeft: number; capacity?: number | null }
+interface Location {
+  id: string; isPrimary: boolean; address: string | null; city: string | null; region: string | null;
+  business: { id: string; name: string; city: string | null; region: string | null };
+  sessions: Session[];
+}
 interface Experience {
   id: string; title: string; shortDescription: string; description: string;
-  highlights: string[]; includes: string[]; whatToBring: string[];
+  highlights: string[]; includes: string[]; includesNote: string | null;
+  whatToBring: string[]; whatToBringNote: string | null;
   priceCredits: number; priceCurrency: number; duration: number;
   maxParticipants: number; minParticipants: number; difficulty: string;
-  minAge: number | null; address: string; city: string; region: string;
+  minAge: number | null; maxAge: number | null; address: string; city: string; region: string;
   coverImage: string | null; averageRating: number; totalReviews: number;
   category: { name: string; slug: string };
   business: { id: string; name: string; description: string | null; phone: string | null; email: string | null };
   images: { id: string; url: string; alt: string | null }[];
-  sessions: { id: string; startTime: string; endTime: string; spotsLeft: number }[];
+  sessions: Session[];
+  locations: Location[];
   reviews: { id: string; rating: number; comment: string | null; user: { firstName: string; lastName: string; avatarUrl: string | null }; createdAt: string }[];
 }
 
@@ -27,14 +35,26 @@ export default function ExperienceDetailPage() {
   const { user } = useAuth();
   const [exp, setExp] = useState<Experience | null>(null);
   const [loading, setLoading] = useState(true);
+  const [selectedLocation, setSelectedLocation] = useState<string>("");
   const [selectedSession, setSelectedSession] = useState<string>("");
   const [participants, setParticipants] = useState(1);
   const [booking, setBooking] = useState(false);
   const [activeImage, setActiveImage] = useState(0);
+  const [ageConfirmed, setAgeConfirmed] = useState(false);
 
   useEffect(() => {
     api.get<Experience>(`/api/experiences/${slug}`)
-      .then((data) => { setExp(data); if (data.sessions.length > 0) setSelectedSession(data.sessions[0].id); })
+      .then((data) => {
+        setExp(data);
+        // Prefer the location model; fall back to flat sessions for legacy data
+        const firstLoc = (data.locations || []).find((l) => l.sessions.length > 0) || data.locations?.[0];
+        if (firstLoc) {
+          setSelectedLocation(firstLoc.id);
+          if (firstLoc.sessions.length > 0) setSelectedSession(firstLoc.sessions[0].id);
+        } else if (data.sessions.length > 0) {
+          setSelectedSession(data.sessions[0].id);
+        }
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [slug]);
@@ -56,6 +76,21 @@ export default function ExperienceDetailPage() {
 
   const allImages = exp.coverImage ? [{ url: exp.coverImage, alt: exp.title }, ...exp.images] : exp.images;
   const totalCredits = exp.priceCredits * participants;
+
+  const locations = exp.locations || [];
+  const currentLoc = locations.find((l) => l.id === selectedLocation) || null;
+  const currentSessions = currentLoc ? currentLoc.sessions : exp.sessions;
+
+  const pickLocation = (locId: string) => {
+    setSelectedLocation(locId);
+    const loc = locations.find((l) => l.id === locId);
+    setSelectedSession(loc && loc.sessions.length > 0 ? loc.sessions[0].id : "");
+  };
+
+  const ageText = exp.minAge != null && exp.maxAge != null
+    ? `Ages ${exp.minAge}–${exp.maxAge}`
+    : exp.minAge != null ? `Ages ${exp.minAge}+`
+    : exp.maxAge != null ? `Up to age ${exp.maxAge}` : null;
 
   return (
     <div className="min-h-screen bg-white">
@@ -99,6 +134,8 @@ export default function ExperienceDetailPage() {
                 <span className="flex items-center gap-1"><MapPin className="w-4 h-4" /> {exp.city}, {exp.region}</span>
                 <span className="flex items-center gap-1"><Clock className="w-4 h-4" /> {exp.duration} min</span>
                 <span className="flex items-center gap-1"><Users className="w-4 h-4" /> Up to {exp.maxParticipants} people</span>
+                {ageText && <span className="flex items-center gap-1 text-cedar-700 font-medium">{ageText}</span>}
+                {locations.length > 1 && <span className="flex items-center gap-1 text-cedar-700 font-medium"><MapPin className="w-4 h-4" /> {locations.length} locations</span>}
                 <span className="flex items-center gap-1"><Star className="w-4 h-4 text-yellow-400 fill-yellow-400" /> {exp.averageRating} ({exp.totalReviews} reviews)</span>
               </div>
             </div>
@@ -119,14 +156,49 @@ export default function ExperienceDetailPage() {
               </div>
             )}
 
-            {exp.includes.length > 0 && (
+            {(exp.includes.length > 0 || exp.includesNote) && (
               <div>
-                <h2 className="text-xl font-bold text-gray-900 mb-3">What&apos;s Included</h2>
+                <h2 className="text-xl font-bold text-gray-900 mb-3">What You Get</h2>
                 <ul className="space-y-2">
                   {exp.includes.map((item, i) => (
                     <li key={i} className="flex items-start gap-2 text-gray-600"><Check className="w-5 h-5 text-cedar-600 mt-0.5 flex-shrink-0" />{item}</li>
                   ))}
                 </ul>
+                {exp.includesNote && <p className="text-gray-600 mt-3 whitespace-pre-line">{exp.includesNote}</p>}
+              </div>
+            )}
+
+            {(exp.whatToBring.length > 0 || exp.whatToBringNote) && (
+              <div>
+                <h2 className="text-xl font-bold text-gray-900 mb-3">What to Bring</h2>
+                {exp.whatToBring.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {exp.whatToBring.map((item, i) => (
+                      <span key={i} className="inline-flex items-center gap-1.5 bg-cedar-50 text-cedar-800 text-sm px-3 py-1.5 rounded-lg"><Check className="w-4 h-4" />{item}</span>
+                    ))}
+                  </div>
+                )}
+                {exp.whatToBringNote && <p className="text-gray-600 mt-3 whitespace-pre-line">{exp.whatToBringNote}</p>}
+              </div>
+            )}
+
+            {/* Locations */}
+            {locations.length > 1 && (
+              <div>
+                <h2 className="text-xl font-bold text-gray-900 mb-3">Where It&apos;s Offered</h2>
+                <div className="grid sm:grid-cols-2 gap-3">
+                  {locations.map((loc) => (
+                    <button
+                      key={loc.id}
+                      onClick={() => pickLocation(loc.id)}
+                      className={`text-left p-4 rounded-xl border transition ${selectedLocation === loc.id ? "border-cedar-500 ring-1 ring-cedar-500 bg-cedar-50/40" : "border-gray-200 hover:border-cedar-300"}`}
+                    >
+                      <p className="font-semibold text-gray-900 flex items-center gap-1.5"><MapPin className="w-4 h-4 text-cedar-600" /> {loc.business.name}</p>
+                      <p className="text-sm text-gray-500 mt-0.5">{loc.city || loc.business.city}{(loc.region || loc.business.region) ? `, ${loc.region || loc.business.region}` : ""}</p>
+                      <p className="text-xs text-gray-400 mt-1">{loc.sessions.length} upcoming session{loc.sessions.length === 1 ? "" : "s"}</p>
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
 
@@ -186,13 +258,25 @@ export default function ExperienceDetailPage() {
                 <span className="text-sm text-gray-500">{exp.priceCredits / 100} credits</span>
               </div>
 
-              {exp.sessions.length > 0 ? (
+              {locations.length > 1 && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Location</label>
+                  <select value={selectedLocation} onChange={(e) => pickLocation(e.target.value)}
+                    className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-cedar-500 outline-none">
+                    {locations.map((loc) => (
+                      <option key={loc.id} value={loc.id}>{loc.business.name} — {loc.city || loc.business.city}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {currentSessions.length > 0 ? (
                 <>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1.5">Select Date</label>
                     <select value={selectedSession} onChange={(e) => setSelectedSession(e.target.value)}
                       className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-cedar-500 outline-none">
-                      {exp.sessions.map((s) => (
+                      {currentSessions.map((s) => (
                         <option key={s.id} value={s.id}>
                           {new Date(s.startTime).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                           {" "}({s.spotsLeft} spots left)
@@ -221,8 +305,20 @@ export default function ExperienceDetailPage() {
                     </div>
                   </div>
 
-                  <button onClick={handleBook} disabled={booking}
-                    className="btn-primary w-full !py-3.5 disabled:opacity-50">
+                  {ageText && (
+                    <label className="flex items-start gap-2 text-xs text-gray-600 cursor-pointer bg-cedar-50 border border-cedar-100 rounded-xl p-3">
+                      <input
+                        type="checkbox"
+                        checked={ageConfirmed}
+                        onChange={(e) => setAgeConfirmed(e.target.checked)}
+                        className="accent-cedar-600 mt-0.5"
+                      />
+                      <span>I confirm all participants meet the age requirement (<span className="font-semibold text-cedar-800">{ageText}</span>).</span>
+                    </label>
+                  )}
+
+                  <button onClick={handleBook} disabled={booking || (!!ageText && !ageConfirmed)}
+                    className="btn-primary w-full !py-3.5 disabled:opacity-50 disabled:cursor-not-allowed">
                     <Calendar className="w-5 h-5 mr-2" />
                     {booking ? "Booking..." : "Book Now"}
                   </button>

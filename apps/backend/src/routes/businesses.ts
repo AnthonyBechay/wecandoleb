@@ -140,6 +140,84 @@ router.get("/stats", authenticate, authorize("BUSINESS_OWNER", "ADMIN", "SUPER_A
   }
 });
 
+// Search active businesses (for inviting a venue to host an experience —
+// including businesses owned by other people).
+router.get("/search", authenticate, authorize("BUSINESS_OWNER", "ADMIN", "SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
+  try {
+    const q = String((req.query.q as string) || "").trim();
+    if (q.length < 2) { res.json([]); return; }
+    const businesses = await prisma.business.findMany({
+      where: {
+        isActive: true,
+        OR: [
+          { name: { contains: q, mode: "insensitive" } },
+          { city: { contains: q, mode: "insensitive" } },
+          { region: { contains: q, mode: "insensitive" } },
+        ],
+      },
+      select: { id: true, name: true, city: true, region: true, isVerified: true },
+      orderBy: [{ isVerified: "desc" }, { name: "asc" }],
+      take: 10,
+    });
+    res.json(businesses);
+  } catch {
+    res.status(500).json({ error: "Failed to search businesses" });
+  }
+});
+
+// Incoming collaboration requests: experiences that another owner wants to
+// host at one of MY businesses (pending my acceptance).
+router.get("/collaboration-requests", authenticate, authorize("BUSINESS_OWNER", "ADMIN", "SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
+  try {
+    const myBusinesses = await prisma.business.findMany({ where: { ownerId: req.authUser!.userId }, select: { id: true } });
+    const bizIds = myBusinesses.map((b) => b.id);
+    const requests = await prisma.experienceBusiness.findMany({
+      where: { businessId: { in: bizIds }, status: "PENDING", isPrimary: false },
+      orderBy: { createdAt: "desc" },
+      include: {
+        business: { select: { id: true, name: true } },
+        experience: {
+          select: {
+            id: true, title: true, shortDescription: true, coverImage: true, priceCurrency: true, duration: true,
+            business: { select: { name: true } },
+            category: { select: { name: true } },
+          },
+        },
+      },
+    });
+    res.json(requests);
+  } catch {
+    res.status(500).json({ error: "Failed to fetch collaboration requests" });
+  }
+});
+
+// Accept or decline a collaboration request for one of my businesses
+router.put("/collaboration-requests/:linkId", authenticate, authorize("BUSINESS_OWNER", "ADMIN", "SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { action } = req.body; // "accept" | "decline"
+    if (!["accept", "decline"].includes(action)) { res.status(400).json({ error: "action must be accept or decline" }); return; }
+
+    const link = await prisma.experienceBusiness.findUnique({
+      where: { id: req.params.linkId as string },
+      include: { business: { select: { ownerId: true } } },
+    });
+    if (!link) { res.status(404).json({ error: "Request not found" }); return; }
+    if (link.business.ownerId !== req.authUser!.userId && !["ADMIN", "SUPER_ADMIN"].includes(req.authUser!.role)) {
+      res.status(403).json({ error: "Unauthorized" });
+      return;
+    }
+    if (link.status !== "PENDING") { res.status(400).json({ error: "This request has already been handled" }); return; }
+
+    const updated = await prisma.experienceBusiness.update({
+      where: { id: link.id },
+      data: { status: action === "accept" ? "ACCEPTED" : "DECLINED" },
+    });
+    res.json(updated);
+  } catch {
+    res.status(500).json({ error: "Failed to update request" });
+  }
+});
+
 // Create business
 router.post("/", authenticate, authorize("BUSINESS_OWNER", "ADMIN", "SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
   try {
@@ -248,17 +326,22 @@ router.post("/:businessId/experiences", authenticate, async (req: AuthRequest, r
     }
 
     const {
-      title, shortDescription, description, highlights, includes, whatToBring,
+      title, shortDescription, description, highlights, includes, includesNote, whatToBring, whatToBringNote,
       priceCredits, priceCurrency, costCredits, costCurrency, duration, maxParticipants, minParticipants,
-      difficulty, minAge, address, city, region, coverImage, categoryId,
+      difficulty, minAge, maxAge, address, city, region, coverImage, categoryId,
     } = req.body;
 
     if (!title || !duration || !maxParticipants || !categoryId || !address || !city || !region) {
       res.status(400).json({ error: "title, duration, maxParticipants, categoryId, address, city, and region are required" });
       return;
     }
+    if (minAge != null && maxAge != null && Number(maxAge) < Number(minAge)) {
+      res.status(400).json({ error: "maxAge cannot be less than minAge" });
+      return;
+    }
 
     const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+    const bizId = req.params.businessId as string;
 
     const experience = await prisma.experience.create({
       data: {
@@ -268,7 +351,9 @@ router.post("/:businessId/experiences", authenticate, async (req: AuthRequest, r
         description,
         highlights: highlights || [],
         includes: includes || [],
+        includesNote,
         whatToBring: whatToBring || [],
+        whatToBringNote,
         priceCredits,
         priceCurrency,
         costCredits: costCredits ?? 0,
@@ -278,13 +363,18 @@ router.post("/:businessId/experiences", authenticate, async (req: AuthRequest, r
         minParticipants: minParticipants || 1,
         difficulty: difficulty || "EASY",
         minAge,
+        maxAge,
         address,
         city,
         region,
         coverImage,
         categoryId,
-        businessId: req.params.businessId as string,
+        businessId: bizId,
         status: "DRAFT",
+        // The owning business is automatically the primary hosting location.
+        locations: {
+          create: [{ businessId: bizId, status: "ACCEPTED", isPrimary: true, address, city, region }],
+        },
       },
       include: {
         category: { select: { id: true, name: true } },
@@ -320,9 +410,9 @@ router.put("/:businessId/experiences/:expId", authenticate, async (req: AuthRequ
     }
 
     const {
-      title, shortDescription, description, highlights, includes, whatToBring,
+      title, shortDescription, description, highlights, includes, includesNote, whatToBring, whatToBringNote,
       priceCredits, priceCurrency, costCredits, costCurrency, duration, maxParticipants, minParticipants,
-      difficulty, minAge, address, city, region, coverImage, categoryId, status,
+      difficulty, minAge, maxAge, address, city, region, coverImage, categoryId, status,
     } = req.body;
 
     const data: any = {};
@@ -331,7 +421,10 @@ router.put("/:businessId/experiences/:expId", authenticate, async (req: AuthRequ
     if (description !== undefined) data.description = description;
     if (highlights !== undefined) data.highlights = highlights;
     if (includes !== undefined) data.includes = includes;
+    if (includesNote !== undefined) data.includesNote = includesNote;
     if (whatToBring !== undefined) data.whatToBring = whatToBring;
+    if (whatToBringNote !== undefined) data.whatToBringNote = whatToBringNote;
+    if (maxAge !== undefined) data.maxAge = maxAge;
     if (priceCredits !== undefined) data.priceCredits = priceCredits;
     if (priceCurrency !== undefined) data.priceCurrency = priceCurrency;
     if (costCredits !== undefined) data.costCredits = costCredits;

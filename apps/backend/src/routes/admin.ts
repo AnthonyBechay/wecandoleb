@@ -205,6 +205,164 @@ router.get("/audit", authenticate, authorize("ADMIN", "SUPER_ADMIN"), async (req
   }
 });
 
+// ─── BOOKINGS ────────────────────────────────────────────
+router.get("/bookings", authenticate, authorize("ADMIN", "SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { page = "1", limit = "20", status, search } = req.query as Record<string, string | undefined>;
+    const take = Math.min(Number(limit) || 20, 100);
+    const skip = ((Number(page) || 1) - 1) * take;
+
+    const where: any = {};
+    if (status) where.status = status;
+    if (search) {
+      where.OR = [
+        { experience: { title: { contains: search, mode: "insensitive" } } },
+        { user: { email: { contains: search, mode: "insensitive" } } },
+        { user: { firstName: { contains: search, mode: "insensitive" } } },
+        { user: { lastName: { contains: search, mode: "insensitive" } } },
+      ];
+    }
+
+    const [bookings, total] = await Promise.all([
+      prisma.booking.findMany({
+        where, skip, take, orderBy: { createdAt: "desc" },
+        include: {
+          user: { select: { id: true, firstName: true, lastName: true, email: true } },
+          experience: { select: { id: true, title: true, business: { select: { name: true } } } },
+          session: { select: { startTime: true } },
+        },
+      }),
+      prisma.booking.count({ where }),
+    ]);
+
+    res.json({ bookings, pagination: { page: Number(page) || 1, limit: take, total, totalPages: Math.ceil(total / take) } });
+  } catch {
+    res.status(500).json({ error: "Failed to fetch bookings" });
+  }
+});
+
+// Admin-forced cancel + refund (financial action → SUPER_ADMIN only)
+router.post("/bookings/:id/cancel", authenticate, authorize("SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
+  try {
+    const booking = await prisma.booking.findUnique({ where: { id: req.params.id as string } });
+    if (!booking) { res.status(404).json({ error: "Booking not found" }); return; }
+    if (!["CONFIRMED", "PENDING"].includes(booking.status)) {
+      res.status(400).json({ error: "Only confirmed or pending bookings can be cancelled" });
+      return;
+    }
+
+    try {
+      await prisma.$transaction(async (tx) => {
+        const flip = await tx.booking.updateMany({
+          where: { id: booking.id, status: { in: ["CONFIRMED", "PENDING"] } },
+          data: { status: "CANCELLED" },
+        });
+        if (flip.count !== 1) throw new Error("ALREADY_CANCELLED");
+        await tx.user.update({ where: { id: booking.userId }, data: { creditBalance: { increment: booking.totalCredits } } });
+        await tx.creditTransaction.create({
+          data: { userId: booking.userId, amount: booking.totalCredits, type: "REFUND", description: "Admin-cancelled booking refund", referenceId: booking.id },
+        });
+        await tx.experienceSession.update({ where: { id: booking.sessionId }, data: { spotsLeft: { increment: booking.participants } } });
+      });
+    } catch (e: any) {
+      if (e.message === "ALREADY_CANCELLED") { res.status(400).json({ error: "Already cancelled" }); return; }
+      throw e;
+    }
+
+    await logAudit({
+      actor: actorFromReq(req), category: "BOOKING", action: "BOOKING_ADMIN_CANCEL",
+      summary: `Admin cancelled a booking and refunded ${(booking.totalCredits / 100).toFixed(0)} credits`,
+      targetType: "Booking", targetId: booking.id, amount: booking.totalCredits, ip: ipFromReq(req),
+    });
+
+    res.json({ message: "Booking cancelled and refunded" });
+  } catch {
+    res.status(500).json({ error: "Failed to cancel booking" });
+  }
+});
+
+// ─── REVIEWS (moderation) ────────────────────────────────
+router.get("/reviews", authenticate, authorize("ADMIN", "SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { page = "1", limit = "20", published, search } = req.query as Record<string, string | undefined>;
+    const take = Math.min(Number(limit) || 20, 100);
+    const skip = ((Number(page) || 1) - 1) * take;
+
+    const where: any = {};
+    if (published === "true") where.isPublished = true;
+    if (published === "false") where.isPublished = false;
+    if (search) {
+      where.OR = [
+        { comment: { contains: search, mode: "insensitive" } },
+        { experience: { title: { contains: search, mode: "insensitive" } } },
+        { user: { email: { contains: search, mode: "insensitive" } } },
+      ];
+    }
+
+    const [reviews, total] = await Promise.all([
+      prisma.review.findMany({
+        where, skip, take, orderBy: { createdAt: "desc" },
+        include: {
+          user: { select: { id: true, firstName: true, lastName: true, email: true } },
+          experience: { select: { id: true, title: true } },
+        },
+      }),
+      prisma.review.count({ where }),
+    ]);
+
+    res.json({ reviews, pagination: { page: Number(page) || 1, limit: take, total, totalPages: Math.ceil(total / take) } });
+  } catch {
+    res.status(500).json({ error: "Failed to fetch reviews" });
+  }
+});
+
+// Publish / unpublish a review (moderation)
+router.put("/reviews/:id/publish", authenticate, authorize("ADMIN", "SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { isPublished } = req.body;
+    const review = await prisma.review.update({
+      where: { id: req.params.id as string },
+      data: { isPublished: !!isPublished },
+    });
+    await recalcExperienceRating(review.experienceId);
+    await logAudit({
+      actor: actorFromReq(req), category: "EXPERIENCE", action: isPublished ? "REVIEW_PUBLISH" : "REVIEW_UNPUBLISH",
+      summary: `${isPublished ? "Published" : "Hid"} a review`, targetType: "Review", targetId: review.id, ip: ipFromReq(req),
+    });
+    res.json(review);
+  } catch {
+    res.status(500).json({ error: "Failed to update review" });
+  }
+});
+
+// Delete a review
+router.delete("/reviews/:id", authenticate, authorize("ADMIN", "SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
+  try {
+    const review = await prisma.review.findUnique({ where: { id: req.params.id as string } });
+    if (!review) { res.status(404).json({ error: "Review not found" }); return; }
+    await prisma.review.delete({ where: { id: review.id } });
+    await recalcExperienceRating(review.experienceId);
+    await logAudit({
+      actor: actorFromReq(req), category: "EXPERIENCE", action: "REVIEW_DELETE",
+      summary: "Deleted a review", targetType: "Review", targetId: review.id, ip: ipFromReq(req),
+    });
+    res.json({ message: "Review deleted" });
+  } catch {
+    res.status(500).json({ error: "Failed to delete review" });
+  }
+});
+
+async function recalcExperienceRating(experienceId: string) {
+  const agg = await prisma.review.aggregate({
+    where: { experienceId, isPublished: true },
+    _avg: { rating: true }, _count: { rating: true },
+  });
+  await prisma.experience.update({
+    where: { id: experienceId },
+    data: { averageRating: Math.round((agg._avg.rating || 0) * 10) / 10, totalReviews: agg._count.rating },
+  });
+}
+
 // ─── USERS ───────────────────────────────────────────────
 
 router.get("/users", authenticate, authorize("ADMIN", "SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
@@ -822,16 +980,71 @@ router.put("/experiences/:id/featured", authenticate, authorize("ADMIN", "SUPER_
 
 // ─── CATEGORIES ──────────────────────────────────────────
 
+router.get("/categories", authenticate, authorize("ADMIN", "SUPER_ADMIN"), async (_req: AuthRequest, res: Response) => {
+  try {
+    const categories = await prisma.category.findMany({
+      orderBy: { sortOrder: "asc" },
+      include: { _count: { select: { experiences: true } } },
+    });
+    res.json(categories);
+  } catch {
+    res.status(500).json({ error: "Failed to fetch categories" });
+  }
+});
+
 router.post("/categories", authenticate, authorize("ADMIN", "SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
   try {
     const { name, description, iconUrl, sortOrder } = req.body;
+    if (!name || !name.trim()) { res.status(400).json({ error: "Name is required" }); return; }
     const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
     const category = await prisma.category.create({
       data: { name, slug, description, iconUrl, sortOrder: sortOrder || 0 },
     });
+    await logAudit({
+      actor: actorFromReq(req), category: "EXPERIENCE", action: "CATEGORY_CREATE",
+      summary: `Created category "${category.name}"`, targetType: "Category", targetId: category.id, ip: ipFromReq(req),
+    });
     res.status(201).json(category);
   } catch {
     res.status(500).json({ error: "Failed to create category" });
+  }
+});
+
+router.put("/categories/:id", authenticate, authorize("ADMIN", "SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { name, description, iconUrl, sortOrder } = req.body;
+    const data: any = {};
+    if (name !== undefined) data.name = name;
+    if (description !== undefined) data.description = description;
+    if (iconUrl !== undefined) data.iconUrl = iconUrl;
+    if (sortOrder !== undefined) data.sortOrder = sortOrder;
+    const category = await prisma.category.update({ where: { id: req.params.id as string }, data });
+    await logAudit({
+      actor: actorFromReq(req), category: "EXPERIENCE", action: "CATEGORY_UPDATE",
+      summary: `Edited category "${category.name}"`, targetType: "Category", targetId: category.id, ip: ipFromReq(req),
+    });
+    res.json(category);
+  } catch {
+    res.status(500).json({ error: "Failed to update category" });
+  }
+});
+
+router.delete("/categories/:id", authenticate, authorize("SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
+  try {
+    const inUse = await prisma.experience.count({ where: { categoryId: req.params.id as string } });
+    if (inUse > 0) {
+      res.status(400).json({ error: `Cannot delete: ${inUse} experience(s) use this category` });
+      return;
+    }
+    const cat = await prisma.category.findUnique({ where: { id: req.params.id as string }, select: { name: true } });
+    await prisma.category.delete({ where: { id: req.params.id as string } });
+    await logAudit({
+      actor: actorFromReq(req), category: "EXPERIENCE", action: "CATEGORY_DELETE",
+      summary: `Deleted category "${cat?.name ?? req.params.id}"`, targetType: "Category", targetId: req.params.id as string, ip: ipFromReq(req),
+    });
+    res.json({ message: "Category deleted" });
+  } catch {
+    res.status(500).json({ error: "Failed to delete category" });
   }
 });
 
